@@ -1,0 +1,33 @@
+{
+  "name": "fastmail-cli",
+  "version": "0.0.1",
+  "description": "CLI for FastMail via JMAP",
+  "module": "src/index.ts",
+  "type": "module",
+  "private": true,
+  "bin": {
+    "fastmail": "src/index.ts"
+  },
+  "scripts": {
+    "start": "bun run src/index.ts",
+    "lint": "biome check",
+    "format": "biome check --write",
+    "typecheck": "tsc --noEmit",
+    "test": "bun test",
+    "build": "bun run scripts/build.ts",
+    "changeset": "changeset",
+    "version": "bun run scripts/version.ts"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.0.0",
+    "@changesets/cli": "^2.29.8",
+    "@types/bun": "latest",
+    "@types/node": "^22.0.0"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "bun-bagel": "^1.2.0"
+  }
+}

@@ -1,0 +1,131 @@
+name: Version
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      force_release:
+        description: 'Force create release for current version'
+        type: boolean
+        default: false
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  version:
+    name: Version
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v30
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Check for changesets
+        id: check
+        run: |
+          if ls .changeset/*.md 1>/dev/null 2>&1; then
+            # Check if any non-README changeset files exist
+            count=$(ls .changeset/*.md 2>/dev/null | grep -v README.md | wc -l)
+            if [ "$count" -gt "0" ]; then
+              echo "hasChangesets=true" >> $GITHUB_OUTPUT
+            else
+              echo "hasChangesets=false" >> $GITHUB_OUTPUT
+            fi
+          else
+            echo "hasChangesets=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Version and build
+        if: steps.check.outputs.hasChangesets == 'true'
+        id: version
+        run: |
+          bun run version
+          VERSION=$(jq -r '.version' package.json)
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Create Release PR
+        if: steps.version.outputs.version
+        uses: peter-evans/create-pull-request@v7
+        with:
+          commit-message: "release: v${{ steps.version.outputs.version }}"
+          title: "release: v${{ steps.version.outputs.version }}"
+          body: |
+            This PR was auto-generated to release v${{ steps.version.outputs.version }}.
+            
+            Merging will create a git tag and GitHub release.
+          branch: release/v${{ steps.version.outputs.version }}
+          delete-branch: true
+
+      - name: Release
+        if: steps.check.outputs.hasChangesets == 'false' || inputs.force_release
+        run: |
+          VERSION=$(jq -r '.version' package.json)
+          TAG="v${VERSION}"
+          
+          # Skip if tag already exists (unless force_release)
+          if git ls-remote --tags origin | grep -q "refs/tags/${TAG}$"; then
+            if [ "${{ inputs.force_release }}" != "true" ]; then
+              echo "Tag ${TAG} already exists, skipping"
+              exit 0
+            fi
+          fi
+          
+          echo "Releasing ${TAG}..."
+          
+          # Configure git
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          
+          # Build binaries
+          bun run build
+          
+          # Compute hashes
+          DARWIN_ARM_HASH=$(nix hash file --sri dist/fastmail-darwin-arm64)
+          LINUX_ARM_HASH=$(nix hash file --sri dist/fastmail-linux-arm64)
+          LINUX_X64_HASH=$(nix hash file --sri dist/fastmail-linux-x64)
+          echo "Darwin ARM64 hash: $DARWIN_ARM_HASH"
+          echo "Linux ARM64 hash: $LINUX_ARM_HASH"
+          echo "Linux x64 hash: $LINUX_X64_HASH"
+          
+          # Update flake.nix with correct hashes
+          sed -i "s|hash = \"sha256-.*\"; # darwin|hash = \"${DARWIN_ARM_HASH}\"; # darwin|" flake.nix
+          sed -i "s|hash = \"sha256-.*\"; # linux-arm64|hash = \"${LINUX_ARM_HASH}\"; # linux-arm64|" flake.nix
+          sed -i "s|hash = \"sha256-.*\"; # linux-x64|hash = \"${LINUX_X64_HASH}\"; # linux-x64|" flake.nix
+          
+          # Commit hash update
+          git add flake.nix
+          git commit -m "chore: update binary hashes for ${TAG}"
+          git push origin main
+          
+          # Create tag on the new commit and release
+          git tag -a "${TAG}" -m "Release ${TAG}"
+          git push origin "${TAG}"
+          
+          gh release create "${TAG}" \
+            --title "${TAG}" \
+            --generate-notes \
+            dist/fastmail-darwin-arm64 \
+            dist/fastmail-linux-arm64 \
+            dist/fastmail-linux-x64
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
