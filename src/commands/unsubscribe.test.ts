@@ -31,9 +31,8 @@ function parseListUnsubscribe(headers: EmailHeader[]): UnsubscribeMethod[] {
   // Parse <url>, <url> format
   const urlPattern = /<([^>]+)>/g;
   const methods: UnsubscribeMethod[] = [];
-  let match;
 
-  while ((match = urlPattern.exec(unsubHeader.value)) !== null) {
+  for (const match of unsubHeader.value.matchAll(urlPattern)) {
     const url = match[1];
     if (!url) continue;
 

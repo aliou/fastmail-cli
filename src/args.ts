@@ -2,7 +2,7 @@
  * Shared argument parsing utilities using Bun's parseArgs.
  */
 
-import { parseArgs as bunParseArgs } from "util";
+import { parseArgs as bunParseArgs } from "node:util";
 
 export type ParsedArgs = {
   values: Record<string, string | boolean | string[] | undefined>;

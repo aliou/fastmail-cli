@@ -1,4 +1,4 @@
-import { parseArgs as bunParseArgs } from "util";
+import { parseArgs as bunParseArgs } from "node:util";
 import { APP_NAME, VERSION } from "./constants.js";
 
 export interface CliOptions {

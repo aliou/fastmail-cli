@@ -13,7 +13,6 @@ import {
 import { loadConfig } from "../config.ts";
 import { JmapClient } from "../jmap/client.ts";
 import {
-  type Email,
   type EmailFilter,
   getEmails,
   queryEmails,

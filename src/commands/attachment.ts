@@ -4,7 +4,7 @@
 
 import { existsSync, mkdirSync } from "node:fs";
 import { writeFile } from "node:fs/promises";
-import { basename, join } from "node:path";
+import { join } from "node:path";
 import { getPositional, getString, parseArgs, wantsHelp } from "../args.ts";
 import { loadConfig } from "../config.ts";
 import { downloadBlob } from "../jmap/blob.ts";

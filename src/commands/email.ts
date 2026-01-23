@@ -8,7 +8,6 @@ import {
   getNumber,
   getPositional,
   getString,
-  type ParsedArgs,
   parseArgs,
   wantsHelp,
 } from "../args.ts";
@@ -169,9 +168,9 @@ async function getClient(): Promise<JmapClient> {
 export function parseDate(input: string): string {
   // Relative dates
   const relativeMatch = input.match(/^(\d+)([dwmy])$/);
-  if (relativeMatch) {
-    const amount = parseInt(relativeMatch[1]!, 10);
-    const unit = relativeMatch[2]!;
+  if (relativeMatch?.[1] && relativeMatch[2]) {
+    const amount = parseInt(relativeMatch[1], 10);
+    const unit = relativeMatch[2];
     const now = new Date();
 
     switch (unit) {

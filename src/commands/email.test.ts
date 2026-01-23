@@ -1,4 +1,5 @@
-import { beforeEach, describe, expect, mock, test } from "bun:test";
+import { describe, expect, mock, test } from "bun:test";
+import type { JmapClient } from "../jmap/client.ts";
 import { getReplyContext, parseDate } from "./email.ts";
 
 describe("parseDate", () => {
@@ -99,17 +100,17 @@ describe("parseDate", () => {
 describe("markRead", () => {
   test("builds correct update map with $seen keyword", async () => {
     // Mock the JMAP client and setEmails
-    const mockSetEmails = mock(
+    const _mockSetEmails = mock(
       (
-        client: unknown,
+        _client: unknown,
         params: {
           update?: Record<string, Record<string, boolean>>;
         },
       ) => {
         // Verify the update map has correct structure
         expect(params.update).toBeDefined();
-        expect(params.update?.["email1"]).toEqual({ "keywords/$seen": true });
-        expect(params.update?.["email2"]).toEqual({ "keywords/$seen": true });
+        expect(params.update?.email1).toEqual({ "keywords/$seen": true });
+        expect(params.update?.email2).toEqual({ "keywords/$seen": true });
 
         return Promise.resolve({
           updated: { email1: {}, email2: {} },
@@ -144,9 +145,9 @@ describe("markRead", () => {
     }
 
     expect(Object.keys(expectedUpdate).length).toBe(3);
-    expect(expectedUpdate["id1"]).toEqual({ "keywords/$seen": true });
-    expect(expectedUpdate["id2"]).toEqual({ "keywords/$seen": true });
-    expect(expectedUpdate["id3"]).toEqual({ "keywords/$seen": true });
+    expect(expectedUpdate.id1).toEqual({ "keywords/$seen": true });
+    expect(expectedUpdate.id2).toEqual({ "keywords/$seen": true });
+    expect(expectedUpdate.id3).toEqual({ "keywords/$seen": true });
   });
 });
 
@@ -184,9 +185,9 @@ describe("markUnread", () => {
     }
 
     expect(Object.keys(expectedUpdate).length).toBe(3);
-    expect(expectedUpdate["id1"]).toEqual({ "keywords/$seen": null });
-    expect(expectedUpdate["id2"]).toEqual({ "keywords/$seen": null });
-    expect(expectedUpdate["id3"]).toEqual({ "keywords/$seen": null });
+    expect(expectedUpdate.id1).toEqual({ "keywords/$seen": null });
+    expect(expectedUpdate.id2).toEqual({ "keywords/$seen": null });
+    expect(expectedUpdate.id3).toEqual({ "keywords/$seen": null });
   });
 });
 
@@ -218,7 +219,7 @@ describe("getReplyContext", () => {
     });
 
     const result = await getReplyContext(
-      mockClient as any,
+      mockClient as unknown as JmapClient,
       "email-123",
       false,
       "me@example.com",
@@ -238,7 +239,7 @@ describe("getReplyContext", () => {
     });
 
     const result = await getReplyContext(
-      mockClient as any,
+      mockClient as unknown as JmapClient,
       "email-123",
       false,
       "me@example.com",
@@ -261,7 +262,7 @@ describe("getReplyContext", () => {
     });
 
     const result = await getReplyContext(
-      mockClient as any,
+      mockClient as unknown as JmapClient,
       "email-123",
       false,
       "me@example.com",
@@ -281,7 +282,7 @@ describe("getReplyContext", () => {
       });
 
       const result = await getReplyContext(
-        mockClient as any,
+        mockClient as unknown as JmapClient,
         "email-123",
         false,
         "me@example.com",
@@ -300,7 +301,7 @@ describe("getReplyContext", () => {
       });
 
       const result = await getReplyContext(
-        mockClient as any,
+        mockClient as unknown as JmapClient,
         "email-123",
         false,
         "me@example.com",
@@ -319,7 +320,7 @@ describe("getReplyContext", () => {
       });
 
       const result = await getReplyContext(
-        mockClient as any,
+        mockClient as unknown as JmapClient,
         "email-123",
         false,
         "me@example.com",
@@ -338,7 +339,7 @@ describe("getReplyContext", () => {
       });
 
       const result = await getReplyContext(
-        mockClient as any,
+        mockClient as unknown as JmapClient,
         "email-123",
         false,
         "me@example.com",
@@ -356,7 +357,7 @@ describe("getReplyContext", () => {
       });
 
       const result = await getReplyContext(
-        mockClient as any,
+        mockClient as unknown as JmapClient,
         "email-123",
         false,
         "me@example.com",
@@ -379,7 +380,7 @@ describe("getReplyContext", () => {
       });
 
       const result = await getReplyContext(
-        mockClient as any,
+        mockClient as unknown as JmapClient,
         "email-123",
         true,
         "me@example.com",
@@ -401,7 +402,7 @@ describe("getReplyContext", () => {
       });
 
       const result = await getReplyContext(
-        mockClient as any,
+        mockClient as unknown as JmapClient,
         "email-123",
         true,
         "me@example.com",
@@ -427,7 +428,7 @@ describe("getReplyContext", () => {
       });
 
       const result = await getReplyContext(
-        mockClient as any,
+        mockClient as unknown as JmapClient,
         "email-123",
         true,
         "me@example.com",
@@ -457,7 +458,7 @@ describe("getReplyContext", () => {
       });
 
       const result = await getReplyContext(
-        mockClient as any,
+        mockClient as unknown as JmapClient,
         "email-123",
         true,
         "me@example.com",
@@ -480,7 +481,7 @@ describe("getReplyContext", () => {
       });
 
       const result = await getReplyContext(
-        mockClient as any,
+        mockClient as unknown as JmapClient,
         "email-123",
         true,
         "me@example.com",
@@ -503,7 +504,7 @@ describe("getReplyContext", () => {
       });
 
       const result = await getReplyContext(
-        mockClient as any,
+        mockClient as unknown as JmapClient,
         "email-123",
         false, // not reply-all
         "me@example.com",
@@ -529,7 +530,7 @@ describe("getReplyContext", () => {
 
     expect(
       getReplyContext(
-        mockClient as any,
+        mockClient as unknown as JmapClient,
         "nonexistent-id",
         false,
         "me@example.com",
@@ -551,7 +552,12 @@ describe("getReplyContext", () => {
     };
 
     expect(
-      getReplyContext(mockClient as any, "email-123", false, "me@example.com"),
+      getReplyContext(
+        mockClient as unknown as JmapClient,
+        "email-123",
+        false,
+        "me@example.com",
+      ),
     ).rejects.toThrow("Email not found: email-123");
   });
 });

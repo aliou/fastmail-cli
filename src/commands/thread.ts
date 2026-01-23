@@ -5,12 +5,7 @@
 import { getPositional, getString, parseArgs, wantsHelp } from "../args.ts";
 import { loadConfig } from "../config.ts";
 import { JmapClient } from "../jmap/client.ts";
-import {
-  type Email,
-  type EmailBodyPart,
-  getEmails,
-  setEmails,
-} from "../jmap/email.ts";
+import { type EmailBodyPart, getEmails, setEmails } from "../jmap/email.ts";
 import { getThreads } from "../jmap/thread.ts";
 import { JMAP_MAIL_CAPABILITY } from "../jmap/types.ts";
 
