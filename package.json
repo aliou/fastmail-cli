@@ -1,6 +1,6 @@
 {
   "name": "fastmail-cli",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "CLI for FastMail via JMAP",
   "module": "src/index.ts",
   "type": "module",
