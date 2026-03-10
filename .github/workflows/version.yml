@@ -129,3 +129,18 @@ jobs:
             dist/fastmail-linux-x64
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update Homebrew tap
+        if: steps.check.outputs.hasChangesets == 'false' || inputs.force_release
+        run: |
+          VERSION=$(jq -r '.version' package.json)
+          DARWIN_SHA256=$(sha256sum dist/fastmail-darwin-arm64 | awk '{print $1}')
+          gh api repos/aliou/homebrew-toolbox/dispatches \
+            -f event_type=update-formula \
+            -f 'client_payload[formula]=fastmail-cli' \
+            -f "client_payload[version]=${VERSION}" \
+            -f 'client_payload[binary]=fastmail' \
+            -f 'client_payload[repo]=aliou/fastmail-cli' \
+            -f "client_payload[sha256]=${DARWIN_SHA256}"
+        env:
+          GITHUB_TOKEN: ${{ secrets.TAP_GITHUB_TOKEN }}
