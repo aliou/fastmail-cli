@@ -126,7 +126,8 @@ jobs:
             --generate-notes \
             dist/fastmail-darwin-arm64 \
             dist/fastmail-linux-arm64 \
-            dist/fastmail-linux-x64
+            dist/fastmail-linux-x64 \
+            SKILL.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
