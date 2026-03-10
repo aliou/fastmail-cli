@@ -1,5 +1,11 @@
 # fastmail-cli
 
+## 0.1.1
+
+### Patch Changes
+
+- 2908249: Add SKILL.md, Homebrew tap auto-update on release, include SKILL.md in release assets
+
 ## 0.1.0
 
 ### Minor Changes
