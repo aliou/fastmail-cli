@@ -20,15 +20,15 @@
       binaries = {
         "aarch64-darwin" = {
           url = "https://github.com/aliou/fastmail-cli/releases/download/v${version}/fastmail-darwin-arm64";
-          hash = "sha256-8yBNrp4MuPCqaQnPj1v+67xuZ+qupiaHHCy/mY0DUk4="; # darwin
+          hash = "sha256-05k9MjxncH2vbAqLBmBtmg/gYJfGn/gF56i89SbKfv4="; # darwin
         };
         "aarch64-linux" = {
           url = "https://github.com/aliou/fastmail-cli/releases/download/v${version}/fastmail-linux-arm64";
-          hash = "sha256-0dW1VQ8bgBwCXYXjOYaemXG9o3HQeGsIslt07UF0q74="; # linux-arm64
+          hash = "sha256-FmUCmVW1AYkJGdnkHN9RykeK6jP+VIT1lIyBP6SaMDg="; # linux-arm64
         };
         "x86_64-linux" = {
           url = "https://github.com/aliou/fastmail-cli/releases/download/v${version}/fastmail-linux-x64";
-          hash = "sha256-rg8D2NilP7KhynvfCZNaaU/K3hWy3+8aQfOoN7Ycv1Y="; # linux-x64
+          hash = "sha256-67rAz8PEUzULvArsIGZKM6GIDHB+Lyli7QsS1wxUbsk="; # linux-x64
         };
       };
 
