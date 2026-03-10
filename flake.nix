@@ -12,7 +12,7 @@
 
   outputs = { self, nixpkgs, flake-utils, git-hooks }:
     let
-      version = "0.1.0";
+      version = "0.1.1";
 
       # Binary hashes for releases - update these after each release
       # Run: nix-prefetch-url --type sha256 <url>
@@ -20,15 +20,15 @@
       binaries = {
         "aarch64-darwin" = {
           url = "https://github.com/aliou/fastmail-cli/releases/download/v${version}/fastmail-darwin-arm64";
-          hash = "sha256-49Ujp4kC49O0zFDyRiV8CJt+hem7IekpUP886w7cpGg="; # darwin
+          hash = "sha256-8yBNrp4MuPCqaQnPj1v+67xuZ+qupiaHHCy/mY0DUk4="; # darwin
         };
         "aarch64-linux" = {
           url = "https://github.com/aliou/fastmail-cli/releases/download/v${version}/fastmail-linux-arm64";
-          hash = "sha256-72NETHDFPYpfrsB+FO5SB+xgMk/rgJkS3N+BxoIha1g="; # linux-arm64
+          hash = "sha256-0dW1VQ8bgBwCXYXjOYaemXG9o3HQeGsIslt07UF0q74="; # linux-arm64
         };
         "x86_64-linux" = {
           url = "https://github.com/aliou/fastmail-cli/releases/download/v${version}/fastmail-linux-x64";
-          hash = "sha256-I+83KKgI844cZ/9g+7L5xfcObLxpskjG1onEhQnVzQc="; # linux-x64
+          hash = "sha256-rg8D2NilP7KhynvfCZNaaU/K3hWy3+8aQfOoN7Ycv1Y="; # linux-x64
         };
       };
 
