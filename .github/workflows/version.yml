@@ -127,7 +127,7 @@ jobs:
             dist/fastmail-darwin-arm64 \
             dist/fastmail-linux-arm64 \
             dist/fastmail-linux-x64 \
-            SKILL.md
+            share/SKILL.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

@@ -8,6 +8,10 @@
   "bin": {
     "fastmail": "src/index.ts"
   },
+  "files": [
+    "src/**/*",
+    "share/**/*"
+  ],
   "scripts": {
     "start": "bun run src/index.ts",
     "lint": "biome check",
