@@ -1,6 +1,6 @@
 import { describe, expect, mock, test } from "bun:test";
 import type { JmapClient } from "../jmap/client.ts";
-import { getReplyContext, parseDate } from "./email.ts";
+import { getReplyContext, parseDate, parseSearchQuery } from "./email.ts";
 
 describe("parseDate", () => {
   test("handles ISO 8601 format", () => {
@@ -559,5 +559,75 @@ describe("getReplyContext", () => {
         "me@example.com",
       ),
     ).rejects.toThrow("Email not found: email-123");
+  });
+});
+
+describe("parseSearchQuery", () => {
+  test("plain text becomes filter.text", () => {
+    expect(parseSearchQuery("project update")).toEqual({
+      text: "project update",
+    });
+  });
+
+  test("from: operator", () => {
+    expect(parseSearchQuery("from:foo@bar.com")).toEqual({
+      from: "foo@bar.com",
+    });
+  });
+
+  test("to: operator", () => {
+    expect(parseSearchQuery("to:baz@qux.com")).toEqual({ to: "baz@qux.com" });
+  });
+
+  test("cc: operator", () => {
+    expect(parseSearchQuery("cc:someone@example.com")).toEqual({
+      cc: "someone@example.com",
+    });
+  });
+
+  test("bcc: operator", () => {
+    expect(parseSearchQuery("bcc:hidden@example.com")).toEqual({
+      bcc: "hidden@example.com",
+    });
+  });
+
+  test("body: operator", () => {
+    expect(parseSearchQuery("body:invoice")).toEqual({ body: "invoice" });
+  });
+
+  test("quoted subject operator", () => {
+    expect(parseSearchQuery('subject:"hello world"')).toEqual({
+      subject: "hello world",
+    });
+  });
+
+  test("from: combined with free text", () => {
+    expect(parseSearchQuery("from:foo@bar.com project update")).toEqual({
+      from: "foo@bar.com",
+      text: "project update",
+    });
+  });
+
+  test("multiple operators", () => {
+    expect(parseSearchQuery("from:foo@bar.com to:baz@qux.com")).toEqual({
+      from: "foo@bar.com",
+      to: "baz@qux.com",
+    });
+  });
+
+  test("from: and quoted subject with free text", () => {
+    expect(
+      parseSearchQuery(
+        'from:alice@example.com subject:"meeting notes" important',
+      ),
+    ).toEqual({
+      from: "alice@example.com",
+      subject: "meeting notes",
+      text: "important",
+    });
+  });
+
+  test("empty string produces empty filter", () => {
+    expect(parseSearchQuery("")).toEqual({});
   });
 });

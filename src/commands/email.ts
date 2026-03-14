@@ -19,6 +19,7 @@ import {
   type EmailAddress,
   type EmailBodyPart,
   type EmailFilter,
+  type EmailFilterCondition,
   getEmails,
   queryEmails,
   setEmails,
@@ -454,6 +455,55 @@ Options:
   console.log(JSON.stringify(formatEmail(email, true), null, 2));
 }
 
+type SearchQueryField = "from" | "to" | "cc" | "bcc" | "subject" | "body";
+
+/**
+ * Parse a search query string into a structured JMAP EmailFilterCondition.
+ *
+ * Supports field operators: from:, to:, cc:, bcc:, subject:, body:
+ * Values can be quoted (subject:"hello world") or unquoted (to next space).
+ * Any remaining text that is not a field operator is set as filter.text.
+ */
+export function parseSearchQuery(query: string): EmailFilterCondition {
+  const filter: EmailFilterCondition = {};
+  const fields: SearchQueryField[] = [
+    "from",
+    "to",
+    "cc",
+    "bcc",
+    "subject",
+    "body",
+  ];
+
+  let remaining = query;
+
+  for (const field of fields) {
+    // Match field:"quoted value" or field:unquoted-value
+    const quotedPattern = new RegExp(`(?:^|\\s)${field}:"([^"]*)"`, "g");
+    const unquotedPattern = new RegExp(`(?:^|\\s)${field}:(\\S+)`, "g");
+
+    let match = quotedPattern.exec(remaining);
+    if (match) {
+      filter[field as SearchQueryField] = match[1];
+      remaining = remaining.replace(match[0], " ");
+      continue;
+    }
+
+    match = unquotedPattern.exec(remaining);
+    if (match) {
+      filter[field as SearchQueryField] = match[1];
+      remaining = remaining.replace(match[0], " ");
+    }
+  }
+
+  const text = remaining.trim();
+  if (text) {
+    filter.text = text;
+  }
+
+  return filter;
+}
+
 /**
  * Search emails.
  */
@@ -464,7 +514,7 @@ export async function searchEmails(args: string[]): Promise<void> {
     console.log(`
 Usage: fastmail email search <query> [options]
 
-Search emails using text query.
+Search emails using text query with optional field operators.
 
 Options:
   --limit <n>       Max results (default: 20)
@@ -473,8 +523,18 @@ Options:
   --before <date>   Received before date (ISO 8601, YYYY-MM-DD, or 7d)
   -h, --help        Show this help
 
+Query operators:
+  from:<value>      Match sender address
+  to:<value>        Match recipient address
+  cc:<value>        Match CC address
+  bcc:<value>       Match BCC address
+  subject:<value>   Match subject (quote multi-word: subject:"hello world")
+  body:<value>      Match body text
+  (other text)      Full-text search
+
 Examples:
-  fastmail email search "from:newsletter" --after "7d"
+  fastmail email search "from:newsletter@example.com" --after "7d"
+  fastmail email search 'from:alice@example.com subject:"project update"'
   fastmail email search "project update" --after "2026-01-01" --before "2026-01-15"
 `);
     return;
@@ -491,9 +551,7 @@ Examples:
   const limit = getNumber(parsed, "limit") ?? 20;
 
   // Build filter
-  const filter: EmailFilter = {
-    text: query,
-  };
+  const filter: EmailFilter = parseSearchQuery(query);
 
   const mailbox = getString(parsed, "mailbox");
   if (mailbox) {
