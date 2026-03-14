@@ -23,6 +23,7 @@
     "version": "bun run scripts/version.ts"
   },
   "devDependencies": {
+    "@aliou/biome-plugins": "^0.4.1",
     "@biomejs/biome": "^2.0.0",
     "@changesets/cli": "^2.29.8",
     "@types/bun": "latest",

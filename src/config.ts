@@ -3,6 +3,7 @@
  * Handles loading, saving, and validating config from ~/.config/fastmail-cli/config.json
  */
 
+import { chmod, mkdir, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { CONFIG_FILE } from "./constants.ts";
@@ -104,7 +105,6 @@ export async function saveConfig(config: Config): Promise<void> {
   const configDir = dirname(configPath);
 
   // Create directory with restricted permissions (owner only)
-  const { mkdir, chmod } = await import("node:fs/promises");
   await mkdir(configDir, { recursive: true, mode: 0o700 });
 
   // Write config file
@@ -147,7 +147,6 @@ export async function checkConfigPermissions(): Promise<boolean> {
   const configPath = getConfigPath();
 
   try {
-    const { stat } = await import("node:fs/promises");
     const stats = await stat(configPath);
     const mode = stats.mode & 0o777;
 

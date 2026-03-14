@@ -5,9 +5,58 @@ import {
   logout,
   promptForToken,
   readTokenFromStdin,
-} from "./auth.js";
-import { parseArgs, printCompletion, printHelp, printVersion } from "./cli.js";
-import { getConfigPath } from "./config.js";
+} from "./auth";
+import { parseArgs, printCompletion, printHelp, printVersion } from "./cli";
+import {
+  downloadAllAttachments,
+  getAttachment,
+  listAttachments,
+} from "./commands/attachment";
+import {
+  markRead as batchMarkRead,
+  markUnread as batchMarkUnread,
+  deleteEmails,
+  flagEmails,
+  modifyEmails,
+  moveEmails,
+  unflagEmails,
+} from "./commands/batch";
+import {
+  createDraft,
+  deleteDraft,
+  getDraft,
+  listDrafts,
+  sendDraft,
+  updateDraft,
+} from "./commands/draft";
+import {
+  markRead as emailMarkRead,
+  markUnread as emailMarkUnread,
+  getEmail,
+  listEmails,
+  searchEmails,
+  sendEmail,
+} from "./commands/email";
+import {
+  createMailbox,
+  deleteMailbox,
+  listMailboxes,
+  updateMailbox,
+} from "./commands/mailbox";
+import {
+  createMaskedEmail,
+  deleteMaskedEmail,
+  listMaskedEmails,
+  updateMaskedEmail,
+} from "./commands/masked";
+import { getThread, modifyThread, threadAttachments } from "./commands/thread";
+import {
+  batchUnsubscribe,
+  executeUnsubscribe,
+  showUnsubscribe,
+} from "./commands/unsubscribe";
+import { urlCommand } from "./commands/url";
+import { getConfigPath } from "./config";
 
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
@@ -218,15 +267,6 @@ async function handleEmail(
   subcommand: string | null,
   args: string[],
 ): Promise<void> {
-  const {
-    getEmail,
-    listEmails,
-    searchEmails,
-    sendEmail,
-    markRead,
-    markUnread,
-  } = await import("./commands/email.js");
-
   switch (subcommand) {
     case "list":
       await listEmails(args);
@@ -241,10 +281,10 @@ async function handleEmail(
       await searchEmails(args);
       break;
     case "mark-read":
-      await markRead(args);
+      await emailMarkRead(args);
       break;
     case "mark-unread":
-      await markUnread(args);
+      await emailMarkUnread(args);
       break;
     default:
       console.error(
@@ -258,9 +298,6 @@ async function handleMailbox(
   subcommand: string | null,
   args: string[],
 ): Promise<void> {
-  const { createMailbox, deleteMailbox, listMailboxes, updateMailbox } =
-    await import("./commands/mailbox.js");
-
   switch (subcommand) {
     case "list":
       await listMailboxes(args);
@@ -286,13 +323,6 @@ async function handleMasked(
   subcommand: string | null,
   args: string[],
 ): Promise<void> {
-  const {
-    createMaskedEmail,
-    deleteMaskedEmail,
-    listMaskedEmails,
-    updateMaskedEmail,
-  } = await import("./commands/masked.js");
-
   switch (subcommand) {
     case "list":
       await listMaskedEmails(args);
@@ -318,22 +348,12 @@ async function handleBatch(
   subcommand: string | null,
   args: string[],
 ): Promise<void> {
-  const {
-    markRead,
-    markUnread,
-    flagEmails,
-    unflagEmails,
-    moveEmails,
-    deleteEmails,
-    modifyEmails,
-  } = await import("./commands/batch.js");
-
   switch (subcommand) {
     case "read":
-      await markRead(args);
+      await batchMarkRead(args);
       break;
     case "unread":
-      await markUnread(args);
+      await batchMarkUnread(args);
       break;
     case "flag":
       await flagEmails(args);
@@ -362,9 +382,6 @@ async function handleUnsubscribe(
   subcommand: string | null,
   args: string[],
 ): Promise<void> {
-  const { showUnsubscribe, executeUnsubscribe, batchUnsubscribe } =
-    await import("./commands/unsubscribe.js");
-
   switch (subcommand) {
     case "show":
       await showUnsubscribe(args);
@@ -387,9 +404,6 @@ async function handleAttachment(
   subcommand: string | null,
   args: string[],
 ): Promise<void> {
-  const { listAttachments, getAttachment, downloadAllAttachments } =
-    await import("./commands/attachment.js");
-
   switch (subcommand) {
     case "list":
       await listAttachments(args);
@@ -412,10 +426,6 @@ async function handleThread(
   subcommand: string | null,
   args: string[],
 ): Promise<void> {
-  const { getThread, modifyThread, threadAttachments } = await import(
-    "./commands/thread.js"
-  );
-
   switch (subcommand) {
     case "get":
       await getThread(args);
@@ -438,7 +448,6 @@ async function handleUrl(
   subcommand: string | null,
   args: string[],
 ): Promise<void> {
-  const { urlCommand } = await import("./commands/url.js");
   await urlCommand(subcommand, args);
 }
 
@@ -446,15 +455,6 @@ async function handleDraft(
   subcommand: string | null,
   args: string[],
 ): Promise<void> {
-  const {
-    listDrafts,
-    getDraft,
-    createDraft,
-    updateDraft,
-    deleteDraft,
-    sendDraft,
-  } = await import("./commands/draft.js");
-
   switch (subcommand) {
     case "list":
       await listDrafts(args);

@@ -8,6 +8,7 @@
         "bun-bagel": "^1.2.0",
       },
       "devDependencies": {
+        "@aliou/biome-plugins": "^0.4.1",
         "@biomejs/biome": "^2.0.0",
         "@changesets/cli": "^2.29.8",
         "@types/bun": "latest",
@@ -19,6 +20,8 @@
     },
   },
   "packages": {
+    "@aliou/biome-plugins": ["@aliou/biome-plugins@0.4.1", "", { "peerDependencies": { "@biomejs/biome": ">=2.0.0" } }, "sha512-olz6H9lENsZ7KqA1O+yYtL9PaCkD++ryVKGxZ46KvHReBANIt2Vx2hCjS6lxmL2/fBKJ8ce0gquRrjhYVoDg1w=="],
+
     "@babel/runtime": ["@babel/runtime@7.28.6", "", {}, "sha512-05WQkdpL9COIMz4LjTxGpPNCdlpyimKppYNoJ5Di5EUObifl8t4tuLuUBBZEpoLYOmfvIWrsp9fCl0HoPRVTdA=="],
 
     "@biomejs/biome": ["@biomejs/biome@2.3.11", "", { "optionalDependencies": { "@biomejs/cli-darwin-arm64": "2.3.11", "@biomejs/cli-darwin-x64": "2.3.11", "@biomejs/cli-linux-arm64": "2.3.11", "@biomejs/cli-linux-arm64-musl": "2.3.11", "@biomejs/cli-linux-x64": "2.3.11", "@biomejs/cli-linux-x64-musl": "2.3.11", "@biomejs/cli-win32-arm64": "2.3.11", "@biomejs/cli-win32-x64": "2.3.11" }, "bin": { "biome": "bin/biome" } }, "sha512-/zt+6qazBWguPG6+eWmiELqO+9jRsMZ/DBU3lfuU2ngtIQYzymocHhKiZRyrbra4aCOoyTg/BmY+6WH5mv9xmQ=="],

@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
+import { chmod, mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 import {
   fetchSession,
@@ -7,6 +8,7 @@ import {
   logout,
   validateToken,
 } from "./auth.ts";
+import * as configModule from "./config.ts";
 import { JMAP_CORE_CAPABILITY, JMAP_MAIL_CAPABILITY } from "./jmap/types.ts";
 
 // Mock session response based on JMAP spec
@@ -57,12 +59,10 @@ describe("auth", () => {
 
   beforeEach(async () => {
     // Clean up test directory
-    const { rm, mkdir } = await import("node:fs/promises");
     await rm(TEST_CONFIG_DIR, { recursive: true, force: true });
     await mkdir(TEST_CONFIG_DIR, { recursive: true });
 
     // Mock config path
-    const configModule = await import("./config.ts");
     getConfigPathSpy = spyOn(configModule, "getConfigPath").mockReturnValue(
       TEST_CONFIG_PATH,
     );
@@ -73,7 +73,6 @@ describe("auth", () => {
     fetchSpy?.mockRestore();
     getConfigPathSpy?.mockRestore();
 
-    const { rm } = await import("node:fs/promises");
     await rm(TEST_CONFIG_DIR, { recursive: true, force: true });
 
     // Clear env var
@@ -186,7 +185,6 @@ describe("auth", () => {
           outputFormat: "table",
         }),
       );
-      const { chmod } = await import("node:fs/promises");
       await chmod(TEST_CONFIG_PATH, 0o600);
 
       await logout();
@@ -211,7 +209,6 @@ describe("auth", () => {
         TEST_CONFIG_PATH,
         JSON.stringify({ apiToken: "config-token" }),
       );
-      const { chmod } = await import("node:fs/promises");
       await chmod(TEST_CONFIG_PATH, 0o600);
 
       const status = await getAuthStatus();
@@ -256,7 +253,6 @@ describe("auth", () => {
         TEST_CONFIG_PATH,
         JSON.stringify({ apiToken: "invalid-token" }),
       );
-      const { chmod } = await import("node:fs/promises");
       await chmod(TEST_CONFIG_PATH, 0o600);
 
       const status = await getAuthStatus();
@@ -278,7 +274,6 @@ describe("auth", () => {
         TEST_CONFIG_PATH,
         JSON.stringify({ apiToken: "config-token" }),
       );
-      const { chmod } = await import("node:fs/promises");
       await chmod(TEST_CONFIG_PATH, 0o600);
 
       const status = await getAuthStatus();

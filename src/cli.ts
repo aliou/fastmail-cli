@@ -1,5 +1,5 @@
 import { parseArgs as bunParseArgs } from "node:util";
-import { APP_NAME, VERSION } from "./constants.js";
+import { APP_NAME, VERSION } from "./constants";
 
 export interface CliOptions {
   help: boolean;

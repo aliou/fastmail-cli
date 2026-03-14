@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
+import { chmod, mkdir, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
+import * as configModule from "./config.ts";
 import {
   checkConfigPermissions,
   getApiToken,
@@ -22,14 +24,12 @@ describe("config", () => {
 
   beforeEach(async () => {
     // Clean up test directory
-    const { rm, mkdir } = await import("node:fs/promises");
     await rm(TEST_CONFIG_DIR, { recursive: true, force: true });
     await mkdir(TEST_CONFIG_DIR, { recursive: true });
   });
 
   afterEach(async () => {
     // Clean up test directory
-    const { rm } = await import("node:fs/promises");
     await rm(TEST_CONFIG_DIR, { recursive: true, force: true });
 
     // Restore spies
@@ -116,7 +116,6 @@ describe("config", () => {
   describe("loadConfig", () => {
     test("returns default config when file does not exist", async () => {
       // Mock to use test path
-      const configModule = await import("./config.ts");
       getConfigPathSpy = spyOn(configModule, "getConfigPath").mockReturnValue(
         join(TEST_CONFIG_DIR, "nonexistent.json"),
       );
@@ -133,7 +132,6 @@ describe("config", () => {
       );
 
       // Mock to use test path
-      const configModule = await import("./config.ts");
       getConfigPathSpy = spyOn(configModule, "getConfigPath").mockReturnValue(
         TEST_CONFIG_PATH,
       );
@@ -148,7 +146,6 @@ describe("config", () => {
       await Bun.write(TEST_CONFIG_PATH, "not valid json {{{");
 
       // Mock to use test path
-      const configModule = await import("./config.ts");
       getConfigPathSpy = spyOn(configModule, "getConfigPath").mockReturnValue(
         TEST_CONFIG_PATH,
       );
@@ -170,7 +167,6 @@ describe("config", () => {
       const testPath = join(TEST_CONFIG_DIR, "subdir", "config.json");
 
       // Mock to use test path
-      const configModule = await import("./config.ts");
       getConfigPathSpy = spyOn(configModule, "getConfigPath").mockReturnValue(
         testPath,
       );
@@ -186,7 +182,6 @@ describe("config", () => {
       expect(content.apiToken).toBe("new-token");
 
       // Verify permissions (0600 = owner read/write only)
-      const { stat } = await import("node:fs/promises");
       const stats = await stat(testPath);
       expect(stats.mode & 0o777).toBe(0o600);
     });
@@ -199,7 +194,6 @@ describe("config", () => {
       );
 
       // Mock to use test path
-      const configModule = await import("./config.ts");
       getConfigPathSpy = spyOn(configModule, "getConfigPath").mockReturnValue(
         TEST_CONFIG_PATH,
       );
@@ -221,7 +215,6 @@ describe("config", () => {
       );
 
       // Mock to use test path
-      const configModule = await import("./config.ts");
       getConfigPathSpy = spyOn(configModule, "getConfigPath").mockReturnValue(
         TEST_CONFIG_PATH,
       );
@@ -244,7 +237,6 @@ describe("config", () => {
       process.env.FASTMAIL_API_TOKEN = "env-token";
 
       // Mock to use test path (with no config file)
-      const configModule = await import("./config.ts");
       getConfigPathSpy = spyOn(configModule, "getConfigPath").mockReturnValue(
         join(TEST_CONFIG_DIR, "nonexistent.json"),
       );
@@ -264,7 +256,6 @@ describe("config", () => {
       );
 
       // Mock to use test path
-      const configModule = await import("./config.ts");
       getConfigPathSpy = spyOn(configModule, "getConfigPath").mockReturnValue(
         TEST_CONFIG_PATH,
       );
@@ -283,7 +274,6 @@ describe("config", () => {
       );
 
       // Mock to use test path
-      const configModule = await import("./config.ts");
       getConfigPathSpy = spyOn(configModule, "getConfigPath").mockReturnValue(
         TEST_CONFIG_PATH,
       );
@@ -296,7 +286,6 @@ describe("config", () => {
       delete process.env.FASTMAIL_API_TOKEN;
 
       // Mock to use test path (with no config file)
-      const configModule = await import("./config.ts");
       getConfigPathSpy = spyOn(configModule, "getConfigPath").mockReturnValue(
         join(TEST_CONFIG_DIR, "nonexistent.json"),
       );
@@ -310,11 +299,9 @@ describe("config", () => {
     test("returns true for file with 0600 permissions", async () => {
       // Write config and set permissions
       await Bun.write(TEST_CONFIG_PATH, JSON.stringify({ apiToken: "token" }));
-      const { chmod } = await import("node:fs/promises");
       await chmod(TEST_CONFIG_PATH, 0o600);
 
       // Mock to use test path
-      const configModule = await import("./config.ts");
       getConfigPathSpy = spyOn(configModule, "getConfigPath").mockReturnValue(
         TEST_CONFIG_PATH,
       );
@@ -326,11 +313,9 @@ describe("config", () => {
     test("returns false and warns for world-readable file", async () => {
       // Write config and set unsafe permissions
       await Bun.write(TEST_CONFIG_PATH, JSON.stringify({ apiToken: "token" }));
-      const { chmod } = await import("node:fs/promises");
       await chmod(TEST_CONFIG_PATH, 0o644);
 
       // Mock to use test path
-      const configModule = await import("./config.ts");
       getConfigPathSpy = spyOn(configModule, "getConfigPath").mockReturnValue(
         TEST_CONFIG_PATH,
       );
@@ -350,7 +335,6 @@ describe("config", () => {
 
     test("returns true when file does not exist", async () => {
       // Mock to use nonexistent path
-      const configModule = await import("./config.ts");
       getConfigPathSpy = spyOn(configModule, "getConfigPath").mockReturnValue(
         join(TEST_CONFIG_DIR, "nonexistent.json"),
       );
