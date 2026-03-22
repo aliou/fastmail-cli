@@ -98,7 +98,7 @@ function formatMailbox(mailbox: Mailbox & { depth?: number }): string {
   const role = mailbox.role ? ` (${mailbox.role})` : "";
   const unread = mailbox.unreadEmails > 0 ? ` [${mailbox.unreadEmails}]` : "";
 
-  return `${indent}${mailbox.name}${role}${unread} - ${mailbox.totalEmails} emails`;
+  return `${indent}${mailbox.name}${role}${unread} - ${mailbox.totalEmails} emails [${mailbox.id}]`;
 }
 
 /**
