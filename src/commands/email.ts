@@ -215,12 +215,6 @@ async function resolveMailboxId(
   client: JmapClient,
   nameOrId: string,
 ): Promise<string> {
-  // If it looks like an ID (contains special chars), use it directly
-  if (nameOrId.includes("~") || nameOrId.includes("/")) {
-    return nameOrId;
-  }
-
-  // Otherwise, query mailboxes to find by name
   const accountId = await client.getPrimaryAccountId(JMAP_MAIL_CAPABILITY);
   const response = await client.call<{
     accountId: string;
@@ -230,12 +224,18 @@ async function resolveMailboxId(
     accountId,
   });
 
-  // Try exact name match first
+  // Try exact ID match first, allowing unambiguous retrieval by ID.
+  const byId = response.list.find((mb) => mb.id === nameOrId);
+  if (byId) {
+    return byId.id;
+  }
+
+  // Try exact name match.
   let mailbox = response.list.find(
     (mb) => mb.name.toLowerCase() === nameOrId.toLowerCase(),
   );
 
-  // If no exact match, try role match (e.g., "inbox" -> role "inbox")
+  // If no exact match, try role match (e.g., "inbox" -> role "inbox").
   if (!mailbox) {
     mailbox = response.list.find(
       (mb) => mb.role?.toLowerCase() === nameOrId.toLowerCase(),
@@ -518,7 +518,7 @@ Search emails using text query with optional field operators.
 
 Options:
   --limit <n>       Max results (default: 20)
-  --mailbox <name>  Restrict to mailbox
+  --mailbox <name>  Mailbox name or ID to restrict to
   --after <date>    Received on or after date (ISO 8601, YYYY-MM-DD, or 7d)
   --before <date>   Received before date (ISO 8601, YYYY-MM-DD, or 7d)
   -h, --help        Show this help
