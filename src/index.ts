@@ -59,7 +59,15 @@ import { urlCommand } from "./commands/url";
 import { getConfigPath } from "./config";
 
 async function main(): Promise<void> {
-  const args = process.argv.slice(2);
+  // Bun compiled binary: process.argv = ["/path/to/binary", "arg1", "arg2", ...]
+  // bun run script.ts:   process.argv = ["/path/to/bun", "/path/to/script.ts", "arg1", ...]
+  // The compiled binary path won't end in .ts or .js
+  const scriptPath = process.argv[1] ?? "";
+  const isCompiledBinary =
+    !scriptPath.endsWith(".ts") &&
+    !scriptPath.endsWith(".js") &&
+    !scriptPath.includes("bun");
+  const args = process.argv.slice(isCompiledBinary ? 1 : 2);
   const options = parseArgs(args);
 
   if (options.version) {
