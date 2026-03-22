@@ -1,5 +1,22 @@
 # fastmail-cli
 
+## 0.2.1
+
+### Patch Changes
+
+- 84c92cd: Allow resolving mailboxes by ID in email commands.
+
+  `--mailbox` on `email list` and `email search` now accepts a mailbox ID
+  in addition to a name or role. An exact ID match is tried first, so
+  mailboxes with duplicate names across nested folders can be targeted
+  unambiguously.
+
+- fd4523e: Show mailbox ID in `mailbox list` output.
+
+  The human-readable format now includes the mailbox ID at the end of each
+  line, making it easy to copy an ID for use with `--mailbox` or other
+  commands that accept a mailbox ID.
+
 ## 0.2.0
 
 ### Minor Changes
