@@ -4,6 +4,13 @@ CLI for FastMail via JMAP.
 
 ## Installation
 
+### Homebrew (macOS Apple Silicon)
+
+```bash
+brew tap aliou/toolbox
+brew install fastmail-cli
+```
+
 ### From source (requires Bun)
 
 ```bash
