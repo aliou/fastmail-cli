@@ -10,8 +10,8 @@ import {
   parseArgs,
   wantsHelp,
 } from "../args.ts";
-import { loadConfig } from "../config.ts";
-import { JmapClient } from "../jmap/client.ts";
+import { createClient } from "../auth.ts";
+import type { JmapClient } from "../jmap/client.ts";
 import {
   type EmailFilter,
   getEmails,
@@ -36,23 +36,6 @@ const BATCH_OPTIONS = {
   "add-mailbox": { type: "string" as const },
   "remove-mailbox": { type: "string" as const },
 };
-
-/**
- * Get authenticated JMAP client.
- */
-async function getClient(): Promise<JmapClient> {
-  const envToken = process.env.FASTMAIL_API_TOKEN;
-  const config = await loadConfig();
-  const token = envToken ?? config.apiToken;
-
-  if (!token) {
-    throw new Error(
-      "Not authenticated. Run 'fastmail auth login' or set FASTMAIL_API_TOKEN",
-    );
-  }
-
-  return new JmapClient({ token });
-}
 
 /**
  * Resolve mailbox name to ID.
@@ -254,7 +237,7 @@ Examples:
     return;
   }
 
-  const client = await getClient();
+  const client = await createClient();
   const ids = await resolveEmailIds(client, parsed);
 
   if (getBoolean(parsed, "dry-run")) {
@@ -320,7 +303,7 @@ Examples:
     return;
   }
 
-  const client = await getClient();
+  const client = await createClient();
   const ids = await resolveEmailIds(client, parsed);
 
   if (getBoolean(parsed, "dry-run")) {
@@ -386,7 +369,7 @@ Examples:
     return;
   }
 
-  const client = await getClient();
+  const client = await createClient();
   const ids = await resolveEmailIds(client, parsed);
 
   if (getBoolean(parsed, "dry-run")) {
@@ -452,7 +435,7 @@ Examples:
     return;
   }
 
-  const client = await getClient();
+  const client = await createClient();
   const ids = await resolveEmailIds(client, parsed);
 
   if (getBoolean(parsed, "dry-run")) {
@@ -526,7 +509,7 @@ Examples:
     process.exit(1);
   }
 
-  const client = await getClient();
+  const client = await createClient();
   const toMailboxId = await resolveMailboxId(client, to);
   const ids = await resolveEmailIds(client, parsed);
 
@@ -634,7 +617,7 @@ Examples:
     return;
   }
 
-  const client = await getClient();
+  const client = await createClient();
   const ids = await resolveEmailIds(client, parsed);
   const permanent = getBoolean(parsed, "permanent");
 
@@ -756,7 +739,7 @@ Examples:
     return;
   }
 
-  const client = await getClient();
+  const client = await createClient();
   const ids = await resolveEmailIds(client, parsed);
 
   // Build patches based on modification flags

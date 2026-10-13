@@ -6,29 +6,12 @@
 import { exec } from "node:child_process";
 import { platform } from "node:os";
 import { parseArgs } from "node:util";
-import { loadConfig } from "../config.ts";
-import { JmapClient } from "../jmap/client.ts";
+import { createClient } from "../auth.ts";
+import type { JmapClient } from "../jmap/client.ts";
 import { getEmails } from "../jmap/email.ts";
 import { JMAP_MAIL_CAPABILITY } from "../jmap/types.ts";
 
 const FASTMAIL_WEB_BASE = "https://app.fastmail.com";
-
-/**
- * Get authenticated JMAP client.
- */
-async function getClient(): Promise<JmapClient> {
-  const envToken = process.env.FASTMAIL_API_TOKEN;
-  const config = await loadConfig();
-  const token = envToken ?? config.apiToken;
-
-  if (!token) {
-    throw new Error(
-      "Not authenticated. Run 'fastmail auth login' or set FASTMAIL_API_TOKEN",
-    );
-  }
-
-  return new JmapClient({ token });
-}
 
 /**
  * Resolve mailbox name to ID.
@@ -203,7 +186,7 @@ Options:
     process.exit(1);
   }
 
-  const client = await getClient();
+  const client = await createClient();
 
   // Get emails to find their mailboxIds
   const result = await getEmails(client, {
@@ -277,7 +260,7 @@ Options:
     process.exit(1);
   }
 
-  const client = await getClient();
+  const client = await createClient();
   const mailboxId = await resolveMailboxId(client, nameOrId);
   const url = getMailboxUrl(mailboxId);
 
