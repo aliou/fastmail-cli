@@ -75,8 +75,9 @@ describe("auth", () => {
 
     await rm(TEST_CONFIG_DIR, { recursive: true, force: true });
 
-    // Clear env var
+    // Clear env vars
     delete process.env.FASTMAIL_API_TOKEN;
+    delete process.env.FASTMAIL_PROXY_URL;
   });
 
   describe("fetchSession", () => {
@@ -91,6 +92,23 @@ describe("auth", () => {
       expect(session.apiUrl).toBe("https://api.fastmail.com/jmap/api/");
       expect(fetchSpy).toHaveBeenCalledWith(
         "https://api.fastmail.com/jmap/session",
+        expect.objectContaining({
+          headers: {
+            Authorization: "Bearer valid-token",
+          },
+        }),
+      );
+    });
+
+    test("fetches session through proxy when proxyUrl is given", async () => {
+      fetchSpy = spyOn(globalThis, "fetch").mockResolvedValue(
+        createMockResponse(mockSession),
+      );
+
+      await fetchSession("valid-token", "https://proxy.example.com/fastmail");
+
+      expect(fetchSpy).toHaveBeenCalledWith(
+        "https://proxy.example.com/fastmail/jmap/session",
         expect.objectContaining({
           headers: {
             Authorization: "Bearer valid-token",

@@ -7,6 +7,7 @@ import {
   getApiToken,
   getConfigDir,
   getConfigPath,
+  getProxyUrl,
   loadConfig,
   saveConfig,
   updateConfig,
@@ -36,8 +37,9 @@ describe("config", () => {
     getConfigDirSpy?.mockRestore();
     getConfigPathSpy?.mockRestore();
 
-    // Clear env var
+    // Clear env vars
     delete process.env.FASTMAIL_API_TOKEN;
+    delete process.env.FASTMAIL_PROXY_URL;
   });
 
   describe("getConfigDir", () => {
@@ -78,6 +80,18 @@ describe("config", () => {
     test("ignores non-string apiToken", () => {
       const config = validateConfig({ apiToken: 12345 });
       expect(config.apiToken).toBeUndefined();
+    });
+
+    test("extracts valid proxyUrl and strips trailing slash", () => {
+      const config = validateConfig({
+        proxyUrl: "https://proxy.example.com/fastmail/",
+      });
+      expect(config.proxyUrl).toBe("https://proxy.example.com/fastmail");
+    });
+
+    test("ignores non-string proxyUrl", () => {
+      const config = validateConfig({ proxyUrl: 12345 });
+      expect(config.proxyUrl).toBeUndefined();
     });
 
     test("extracts valid defaultAccountId", () => {
@@ -292,6 +306,65 @@ describe("config", () => {
 
       const token = await getApiToken();
       expect(token).toBeUndefined();
+    });
+  });
+
+  describe("getProxyUrl", () => {
+    test("returns env var when set", async () => {
+      process.env.FASTMAIL_PROXY_URL = "https://proxy.example.com/fastmail/";
+
+      // Mock to use test path (with no config file)
+      getConfigPathSpy = spyOn(configModule, "getConfigPath").mockReturnValue(
+        join(TEST_CONFIG_DIR, "nonexistent.json"),
+      );
+
+      const proxyUrl = await getProxyUrl();
+      expect(proxyUrl).toBe("https://proxy.example.com/fastmail");
+    });
+
+    test("returns config value when env not set", async () => {
+      delete process.env.FASTMAIL_PROXY_URL;
+
+      await Bun.write(
+        TEST_CONFIG_PATH,
+        JSON.stringify({
+          proxyUrl: "https://proxy.example.com/fastmail",
+        }),
+      );
+
+      getConfigPathSpy = spyOn(configModule, "getConfigPath").mockReturnValue(
+        TEST_CONFIG_PATH,
+      );
+
+      const proxyUrl = await getProxyUrl();
+      expect(proxyUrl).toBe("https://proxy.example.com/fastmail");
+    });
+
+    test("env var takes precedence over config", async () => {
+      process.env.FASTMAIL_PROXY_URL = "https://env.example.com/fastmail";
+
+      await Bun.write(
+        TEST_CONFIG_PATH,
+        JSON.stringify({ proxyUrl: "https://config.example.com/fastmail" }),
+      );
+
+      getConfigPathSpy = spyOn(configModule, "getConfigPath").mockReturnValue(
+        TEST_CONFIG_PATH,
+      );
+
+      const proxyUrl = await getProxyUrl();
+      expect(proxyUrl).toBe("https://env.example.com/fastmail");
+    });
+
+    test("returns undefined when no proxy configured", async () => {
+      delete process.env.FASTMAIL_PROXY_URL;
+
+      getConfigPathSpy = spyOn(configModule, "getConfigPath").mockReturnValue(
+        join(TEST_CONFIG_DIR, "nonexistent.json"),
+      );
+
+      const proxyUrl = await getProxyUrl();
+      expect(proxyUrl).toBeUndefined();
     });
   });
 

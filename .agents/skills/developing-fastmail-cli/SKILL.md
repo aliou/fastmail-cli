@@ -5,7 +5,7 @@ description: "Develops and maintains the fastmail-cli project. Use when adding c
 
 # Developing fastmail-cli
 
-A CLI for FastMail built with Bun + TypeScript, using the JMAP protocol against `https://api.fastmail.com/jmap/session`.
+A CLI for FastMail built with Bun + TypeScript, using the JMAP protocol against `https://api.fastmail.com/jmap/session`. All API traffic can optionally be routed through an HTTP API proxy (e.g. an API gateway) by setting `FASTMAIL_PROXY_URL` or the `proxyUrl` config key.
 
 ## Running
 
@@ -26,8 +26,8 @@ bun run build        # compile binaries for all platforms
 - `src/jmap/types.ts` - JMAP protocol types and capability constants.
 - `src/jmap/*.ts` - JMAP method wrappers per resource (email, mailbox, masked-email, thread, blob, submission).
 - `src/args.ts` - Shared `parseArgs()` helper wrapping `node:util` parseArgs. Provides `wantsHelp()`, `getString()`, `getNumber()`, `getBoolean()`, `getPositional()`.
-- `src/config.ts` - Config loading/saving. Global config at `~/.config/fastmail-cli/config.json` with `0600` permissions. `getApiToken()` checks env var `FASTMAIL_API_TOKEN` first, then config file.
-- `src/auth.ts` - Auth functions: `login()`, `logout()`, `getAuthStatus()`, `readTokenFromStdin()`, `promptForToken()`. Validates tokens via JMAP session fetch.
+- `src/config.ts` - Config loading/saving. Global config at `~/.config/fastmail-cli/config.json` with `0600` permissions. `getApiToken()` checks env var `FASTMAIL_API_TOKEN` first, then config file. `getProxyUrl()` checks env var `FASTMAIL_PROXY_URL` first, then config file.
+- `src/auth.ts` - Auth functions: `login()`, `logout()`, `getAuthStatus()`, `readTokenFromStdin()`, `promptForToken()`. Validates tokens via JMAP session fetch. Also provides `createClient()`, the shared factory command handlers use to build an authenticated `JmapClient` (token + proxy resolution, exits with an error when unauthenticated).
 - `src/constants.ts` - `APP_NAME`, `VERSION`, `JMAP_SESSION_URL`, `CONFIG_FILE`.
 - `src/commands/` - One file per command resource. Each exports named handler functions.
 
@@ -37,7 +37,7 @@ bun run build        # compile binaries for all platforms
 2. Create `src/commands/<resource>.ts`.
 3. Define options object, import helpers from `../args.ts`.
 4. Export named async functions (`listX`, `getX`, `createX`, etc.) that take `args: string[]`.
-5. Each function should: parse args, check `wantsHelp()`, get token via `getApiToken()`, create `JmapClient`, make JMAP calls, format output.
+5. Each function should: parse args, check `wantsHelp()`, create a client via `createClient()` from `../auth.ts`, make JMAP calls, format output.
 6. Add handler function in `src/index.ts` with dynamic import using `.js` extension.
 7. Add to the switch statement in `main()`.
 8. Update `printHelp()` in `src/cli.ts`.
@@ -48,8 +48,8 @@ bun run build        # compile binaries for all platforms
 
 - Command files use `.ts` import extensions internally. `src/index.ts` uses `.js` extensions for dynamic imports.
 - All commands support `--help` and `--json` flags.
-- Auth token resolution: `FASTMAIL_API_TOKEN` env var > config file.
-- Use `JmapClient` from `src/jmap/client.ts` for all API calls.
+- Auth token resolution: `FASTMAIL_API_TOKEN` env var > config file. Proxy resolution: `FASTMAIL_PROXY_URL` env var > config file.
+- Use `createClient()` from `src/auth.ts` for client creation in commands; use `JmapClient` from `src/jmap/client.ts` for all API calls.
 - Use `parseArgs()` from `src/args.ts` for argument parsing with named option definitions.
 - Error messages go to `console.error`, exit with `process.exit(1)`.
 - Biome for linting/formatting (2-space indent, double quotes), tsc for type checking. Run both before committing.
