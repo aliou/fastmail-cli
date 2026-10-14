@@ -124,10 +124,10 @@ The URLs advertised by the JMAP session response (`apiUrl`, `uploadUrl`,
 The proxy must therefore forward to `https://api.fastmail.com` as its
 upstream, preserving the `/jmap/...` paths.
 
-Authentication still uses your FastMail API token (`Authorization: Bearer
-...`). A proxy that injects its own credentials will replace that header, in
-which case the token only needs to be present locally, e.g. via
-`fastmail auth login`.
+Authentication normally uses your FastMail API token (`Authorization: Bearer
+...`). When a proxy is configured, the token becomes optional: it is still
+sent when present, but a proxy that injects its own credentials will replace
+or ignore it — so with such a proxy no token is needed at all.
 
 ## Development
 

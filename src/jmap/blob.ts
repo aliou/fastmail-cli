@@ -4,6 +4,7 @@
  */
 
 import type { JmapClient } from "./client.ts";
+import { authHeaders } from "./client.ts";
 import { JMAP_MAIL_CAPABILITY } from "./types.ts";
 
 /**
@@ -29,9 +30,7 @@ export async function downloadBlob(
     .replace("{type}", encodeURIComponent(type ?? "application/octet-stream"));
 
   const response = await fetch(url, {
-    headers: {
-      Authorization: `Bearer ${client.getToken()}`,
-    },
+    headers: authHeaders(client.getToken()),
   });
 
   if (!response.ok) {
@@ -90,7 +89,7 @@ export async function uploadBlob(
   const response = await fetch(url, {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${client.getToken()}`,
+      ...authHeaders(client.getToken()),
       "Content-Type": type,
     },
     body: data,

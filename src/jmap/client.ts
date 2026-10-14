@@ -36,10 +36,20 @@ export class JmapMethodError extends Error {
 }
 
 interface JmapClientOptions {
-  token: string;
+  /** API token. Optional when a proxy injects its own credentials. */
+  token?: string;
   sessionUrl?: string;
   /** Base URL of an HTTP API proxy for the FastMail API. */
   proxyUrl?: string;
+}
+
+/**
+ * Build Authorization headers for a request.
+ * Returns an empty object when no token is set (e.g. when a proxy injects
+ * its own credentials), so no Authorization header is sent at all.
+ */
+export function authHeaders(token?: string): Record<string, string> {
+  return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
 /**
@@ -65,7 +75,7 @@ function generateCallId(): string {
 }
 
 export class JmapClient {
-  private token: string;
+  private token?: string;
   private sessionUrl: string;
   private proxyUrl?: string;
   private session: JmapSession | null = null;
@@ -95,9 +105,7 @@ export class JmapClient {
     }
 
     const response = await fetch(this.sessionUrl, {
-      headers: {
-        Authorization: `Bearer ${this.token}`,
-      },
+      headers: authHeaders(this.token),
     });
 
     if (!response.ok) {
@@ -148,10 +156,10 @@ export class JmapClient {
   }
 
   /**
-   * Get the API token.
+   * Get the API token, if one is configured.
    * Used for blob download/upload operations.
    */
-  getToken(): string {
+  getToken(): string | undefined {
     return this.token;
   }
 
@@ -177,7 +185,7 @@ export class JmapClient {
     const response = await fetch(session.apiUrl, {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${this.token}`,
+        ...authHeaders(this.token),
         "Content-Type": "application/json",
       },
       body: JSON.stringify(request),

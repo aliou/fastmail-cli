@@ -117,6 +117,19 @@ describe("auth", () => {
       );
     });
 
+    test("omits the Authorization header when no token is given", async () => {
+      fetchSpy = spyOn(globalThis, "fetch").mockResolvedValue(
+        createMockResponse(mockSession),
+      );
+
+      await fetchSession(undefined, "https://proxy.example.com/fastmail");
+
+      expect(fetchSpy).toHaveBeenCalledWith(
+        "https://proxy.example.com/fastmail/jmap/session",
+        expect.objectContaining({ headers: {} }),
+      );
+    });
+
     test("throws error for 401 unauthorized", async () => {
       fetchSpy = spyOn(globalThis, "fetch").mockResolvedValue(
         createMockResponse({ error: "Unauthorized" }, 401),
@@ -259,6 +272,41 @@ describe("auth", () => {
 
       expect(status.authenticated).toBe(false);
       expect(status.error).toBe("No API token configured");
+    });
+
+    test("authenticates via proxy when no token is set", async () => {
+      fetchSpy = spyOn(globalThis, "fetch").mockResolvedValue(
+        createMockResponse(mockSession),
+      );
+
+      delete process.env.FASTMAIL_API_TOKEN;
+      // No config file, but a proxy is configured
+      process.env.FASTMAIL_PROXY_URL = "https://proxy.example.com/fastmail";
+
+      const status = await getAuthStatus();
+
+      expect(status.authenticated).toBe(true);
+      expect(status.username).toBe("test@fastmail.com");
+      expect(status.tokenSource).toBe("proxy");
+      expect(fetchSpy).toHaveBeenCalledWith(
+        "https://proxy.example.com/fastmail/jmap/session",
+        expect.objectContaining({ headers: {} }),
+      );
+    });
+
+    test("returns not authenticated when proxy session fetch fails without token", async () => {
+      fetchSpy = spyOn(globalThis, "fetch").mockResolvedValue(
+        createMockResponse({ error: "Unauthorized" }, 401),
+      );
+
+      delete process.env.FASTMAIL_API_TOKEN;
+      process.env.FASTMAIL_PROXY_URL = "https://proxy.example.com/fastmail";
+
+      const status = await getAuthStatus();
+
+      expect(status.authenticated).toBe(false);
+      expect(status.tokenSource).toBe("proxy");
+      expect(status.error).toBeTruthy();
     });
 
     test("returns not authenticated for invalid token", async () => {

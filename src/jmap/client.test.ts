@@ -553,6 +553,20 @@ describe("JmapClient with proxy", () => {
 
     expect(session.apiUrl).toBe("https://api.fastmail.com/jmap/api/");
   });
+
+  test("omits the Authorization header when no token is set", async () => {
+    fetchSpy = spyOn(globalThis, "fetch").mockResolvedValue(
+      createMockResponse(mockSession),
+    );
+
+    const client = new JmapClient({
+      proxyUrl: "https://proxy.example.com/fastmail",
+    });
+    await client.getSession();
+
+    const [, init] = fetchSpy.mock.calls[0] as [unknown, RequestInit];
+    expect(init.headers).toEqual({});
+  });
 });
 
 describe("error classes", () => {
