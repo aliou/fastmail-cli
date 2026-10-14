@@ -5,11 +5,13 @@
 
 import {
   checkConfigPermissions,
+  getProxyUrl,
   loadConfig,
   saveConfig,
   updateConfig,
 } from "./config.ts";
 import { JMAP_SESSION_URL } from "./constants.ts";
+import { applyProxy, authHeaders, JmapClient } from "./jmap/client.ts";
 import type { JmapSession } from "./jmap/types.ts";
 
 export interface AuthStatus {
@@ -17,7 +19,7 @@ export interface AuthStatus {
   username?: string;
   primaryAccountId?: string;
   accountName?: string;
-  tokenSource?: "env" | "config";
+  tokenSource?: "env" | "config" | "proxy";
   error?: string;
 }
 
@@ -32,12 +34,15 @@ export interface LoginResult {
 /**
  * Fetch JMAP session to validate token.
  * Returns session on success, throws on failure.
+ * When proxyUrl is given, the session request goes through that proxy.
+ * The token may be omitted when the proxy injects its own credentials.
  */
-export async function fetchSession(token: string): Promise<JmapSession> {
-  const response = await fetch(JMAP_SESSION_URL, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
+export async function fetchSession(
+  token?: string,
+  proxyUrl?: string,
+): Promise<JmapSession> {
+  const response = await fetch(applyProxy(JMAP_SESSION_URL, proxyUrl), {
+    headers: authHeaders(token),
   });
 
   if (!response.ok) {
@@ -56,7 +61,7 @@ export async function fetchSession(token: string): Promise<JmapSession> {
  */
 export async function validateToken(token: string): Promise<boolean> {
   try {
-    await fetchSession(token);
+    await fetchSession(token, await getProxyUrl());
     return true;
   } catch {
     return false;
@@ -89,7 +94,7 @@ function getPrimaryMailAccount(session: JmapSession): {
  */
 export async function login(token: string): Promise<LoginResult> {
   try {
-    const session = await fetchSession(token);
+    const session = await fetchSession(token, await getProxyUrl());
     const primaryAccount = getPrimaryMailAccount(session);
 
     // Store token in config
@@ -133,18 +138,20 @@ export async function getAuthStatus(): Promise<AuthStatus> {
   const envToken = process.env.FASTMAIL_API_TOKEN;
   const config = await loadConfig();
   const token = envToken ?? config.apiToken;
+  const proxyUrl = await getProxyUrl();
 
-  if (!token) {
+  // A proxy that injects its own credentials makes the token optional
+  if (!token && !proxyUrl) {
     return {
       authenticated: false,
       error: "No API token configured",
     };
   }
 
-  const tokenSource = envToken ? "env" : "config";
+  const tokenSource = envToken ? "env" : token ? "config" : "proxy";
 
   try {
-    const session = await fetchSession(token);
+    const session = await fetchSession(token, proxyUrl);
     const primaryAccount = getPrimaryMailAccount(session);
 
     return {
@@ -202,4 +209,27 @@ export async function promptForToken(): Promise<string> {
     });
     process.stdin.resume();
   });
+}
+
+/**
+ * Create an authenticated JMAP client for command handlers.
+ *
+ * Resolves the token (env var > config file) and the optional proxy base URL
+ * (FASTMAIL_PROXY_URL env var > config file). The token is optional when a
+ * proxy is configured, since the proxy may inject its own credentials.
+ * Exits with an error message if neither is configured.
+ */
+export async function createClient(): Promise<JmapClient> {
+  const config = await loadConfig();
+  const token = process.env.FASTMAIL_API_TOKEN ?? config.apiToken;
+  const proxyUrl = await getProxyUrl();
+
+  if (!token && !proxyUrl) {
+    console.error(
+      "Error: Not authenticated. Run 'fastmail auth login', set FASTMAIL_API_TOKEN, or set FASTMAIL_PROXY_URL",
+    );
+    process.exit(1);
+  }
+
+  return new JmapClient({ token, proxyUrl });
 }

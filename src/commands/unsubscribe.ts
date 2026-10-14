@@ -12,8 +12,8 @@ import {
   parseArgs,
   wantsHelp,
 } from "../args.ts";
-import { loadConfig } from "../config.ts";
-import { JmapClient } from "../jmap/client.ts";
+import { createClient } from "../auth.ts";
+import type { JmapClient } from "../jmap/client.ts";
 import {
   type Email,
   type EmailFilter,
@@ -33,23 +33,6 @@ const UNSUBSCRIBE_OPTIONS = {
   json: { type: "boolean" as const },
   interactive: { type: "boolean" as const, short: "i" },
 };
-
-/**
- * Get authenticated JMAP client.
- */
-async function getClient(): Promise<JmapClient> {
-  const envToken = process.env.FASTMAIL_API_TOKEN;
-  const config = await loadConfig();
-  const token = envToken ?? config.apiToken;
-
-  if (!token) {
-    throw new Error(
-      "Not authenticated. Run 'fastmail auth login' or set FASTMAIL_API_TOKEN",
-    );
-  }
-
-  return new JmapClient({ token });
-}
 
 /**
  * Resolve mailbox name to ID.
@@ -312,7 +295,7 @@ Options:
     process.exit(1);
   }
 
-  const client = await getClient();
+  const client = await createClient();
 
   // Get email with headers
   const result = await getEmails(client, {
@@ -389,7 +372,7 @@ Options:
     process.exit(1);
   }
 
-  const client = await getClient();
+  const client = await createClient();
 
   // Get email with headers
   const result = await getEmails(client, {
@@ -479,7 +462,7 @@ Examples:
     return;
   }
 
-  const client = await getClient();
+  const client = await createClient();
 
   // Query emails
   const filter: EmailFilter = {};

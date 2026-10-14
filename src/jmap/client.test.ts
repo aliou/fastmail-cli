@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, spyOn, test } from "bun:test";
 import {
+  applyProxy,
   getMethodResponse,
   isMethodError,
   JmapClient,
@@ -408,6 +409,163 @@ describe("helper functions", () => {
       ];
       expect(isMethodError(successResponse)).toBe(false);
     });
+  });
+});
+
+describe("applyProxy", () => {
+  test("replaces the FastMail API base with the proxy base", () => {
+    expect(
+      applyProxy("https://api.fastmail.com/jmap/api/", "https://gw/fastmail"),
+    ).toBe("https://gw/fastmail/jmap/api/");
+  });
+
+  test("strips trailing slashes from the proxy base", () => {
+    expect(
+      applyProxy(
+        "https://api.fastmail.com/jmap/session",
+        "https://gw/fastmail/",
+      ),
+    ).toBe("https://gw/fastmail/jmap/session");
+  });
+
+  test("leaves foreign URLs unchanged", () => {
+    expect(applyProxy("https://example.com/other", "https://gw/fastmail")).toBe(
+      "https://example.com/other",
+    );
+  });
+
+  test("returns the URL unchanged when no proxy is set", () => {
+    expect(applyProxy("https://api.fastmail.com/jmap/api/")).toBe(
+      "https://api.fastmail.com/jmap/api/",
+    );
+  });
+
+  test("is idempotent for already-proxied URLs", () => {
+    const proxied = applyProxy(
+      "https://api.fastmail.com/jmap/api/",
+      "https://gw/fastmail",
+    );
+    expect(applyProxy(proxied, "https://gw/fastmail")).toBe(proxied);
+  });
+});
+
+describe("JmapClient with proxy", () => {
+  let fetchSpy: ReturnType<typeof spyOn>;
+
+  afterEach(() => {
+    if (fetchSpy) {
+      fetchSpy.mockRestore();
+    }
+  });
+
+  test("fetches the session through the proxy", async () => {
+    fetchSpy = spyOn(globalThis, "fetch").mockResolvedValue(
+      createMockResponse(mockSession),
+    );
+
+    const client = new JmapClient({
+      token: "test-token",
+      proxyUrl: "https://proxy.example.com/fastmail",
+    });
+    await client.getSession();
+
+    expect(fetchSpy).toHaveBeenCalledWith(
+      "https://proxy.example.com/fastmail/jmap/session",
+      expect.objectContaining({
+        headers: { Authorization: "Bearer test-token" },
+      }),
+    );
+  });
+
+  test("rewrites session URLs to stay on the proxy", async () => {
+    fetchSpy = spyOn(globalThis, "fetch").mockResolvedValue(
+      createMockResponse(mockSession),
+    );
+
+    const client = new JmapClient({
+      token: "test-token",
+      proxyUrl: "https://proxy.example.com/fastmail",
+    });
+    const session = await client.getSession();
+
+    expect(session.apiUrl).toBe("https://proxy.example.com/fastmail/jmap/api/");
+    expect(session.downloadUrl).toBe(
+      "https://proxy.example.com/fastmail/jmap/download/{accountId}/{blobId}/{name}",
+    );
+    expect(session.uploadUrl).toBe(
+      "https://proxy.example.com/fastmail/jmap/upload/{accountId}/",
+    );
+    expect(session.eventSourceUrl).toBe(
+      "https://proxy.example.com/fastmail/jmap/eventsource/",
+    );
+  });
+
+  test("sends JMAP requests to the proxied API URL", async () => {
+    fetchSpy = spyOn(globalThis, "fetch").mockImplementation((async (
+      input: unknown,
+    ) => {
+      if (input === "https://proxy.example.com/fastmail/jmap/session") {
+        return createMockResponse(mockSession);
+      }
+      return createMockResponse({
+        methodResponses: [["Mailbox/get", { list: [] }, "c1"]],
+        sessionState: mockSession.state,
+      });
+    }) as typeof fetch);
+
+    const client = new JmapClient({
+      token: "test-token",
+      proxyUrl: "https://proxy.example.com/fastmail",
+    });
+    await client.request(
+      [JMAP_CORE_CAPABILITY],
+      [["Mailbox/get", { ids: null }, "c1"]],
+    );
+
+    expect(fetchSpy).toHaveBeenCalledWith(
+      "https://proxy.example.com/fastmail/jmap/api/",
+      expect.objectContaining({ method: "POST" }),
+    );
+  });
+
+  test("resolveUrl routes blob URLs through the proxy", async () => {
+    fetchSpy = spyOn(globalThis, "fetch").mockResolvedValue(
+      createMockResponse(mockSession),
+    );
+
+    const client = new JmapClient({
+      token: "test-token",
+      proxyUrl: "https://proxy.example.com/fastmail",
+    });
+
+    expect(client.resolveUrl(mockSession.downloadUrl)).toBe(
+      "https://proxy.example.com/fastmail/jmap/download/{accountId}/{blobId}/{name}",
+    );
+  });
+
+  test("keeps session URLs direct when no proxy is set", async () => {
+    fetchSpy = spyOn(globalThis, "fetch").mockResolvedValue(
+      createMockResponse(mockSession),
+    );
+
+    const client = new JmapClient({ token: "test-token" });
+    const session = await client.getSession();
+
+    expect(session.apiUrl).toBe("https://api.fastmail.com/jmap/api/");
+  });
+
+  test("omits the Authorization header when no token is set", async () => {
+    fetchSpy = spyOn(globalThis, "fetch").mockResolvedValue(
+      createMockResponse(mockSession),
+    );
+
+    const client = new JmapClient({
+      proxyUrl: "https://proxy.example.com/fastmail",
+    });
+    await client.getSession();
+
+    const [, init] = fetchSpy.mock.calls[0] as [unknown, RequestInit];
+    expect(init.headers).toEqual({});
   });
 });
 

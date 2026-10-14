@@ -15,6 +15,11 @@ export interface Config {
   // Default account ID (if multiple accounts)
   defaultAccountId?: string;
 
+  // Base URL of an HTTP API proxy (e.g. an API gateway) that forwards
+  // requests to the FastMail API. When set, all JMAP URLs (session, API,
+  // upload, download) are routed through it instead of api.fastmail.com.
+  proxyUrl?: string;
+
   // Output preferences
   outputFormat?: "json" | "table";
 }
@@ -57,6 +62,10 @@ export function validateConfig(data: unknown): Config {
 
   if (typeof obj.defaultAccountId === "string") {
     config.defaultAccountId = obj.defaultAccountId;
+  }
+
+  if (typeof obj.proxyUrl === "string" && obj.proxyUrl.length > 0) {
+    config.proxyUrl = obj.proxyUrl.replace(/\/+$/, "");
   }
 
   if (obj.outputFormat === "json" || obj.outputFormat === "table") {
@@ -137,6 +146,21 @@ export async function getApiToken(): Promise<string | undefined> {
 
   const config = await loadConfig();
   return config.apiToken;
+}
+
+/**
+ * Get the proxy base URL, checking env var first, then config file.
+ * Returns undefined when no proxy is configured (direct FastMail access).
+ */
+export async function getProxyUrl(): Promise<string | undefined> {
+  // Environment variable takes precedence
+  const envProxy = process.env.FASTMAIL_PROXY_URL;
+  if (envProxy) {
+    return envProxy.replace(/\/+$/, "");
+  }
+
+  const config = await loadConfig();
+  return config.proxyUrl;
 }
 
 /**

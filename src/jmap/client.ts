@@ -3,7 +3,7 @@
  * Handles session discovery, request batching, and response parsing.
  */
 
-import { JMAP_SESSION_URL } from "../constants.ts";
+import { FASTMAIL_API_BASE, JMAP_SESSION_URL } from "../constants.ts";
 import {
   JMAP_CORE_CAPABILITY,
   type JmapRequest,
@@ -36,8 +36,35 @@ export class JmapMethodError extends Error {
 }
 
 interface JmapClientOptions {
-  token: string;
+  /** API token. Optional when a proxy injects its own credentials. */
+  token?: string;
   sessionUrl?: string;
+  /** Base URL of an HTTP API proxy for the FastMail API. */
+  proxyUrl?: string;
+}
+
+/**
+ * Build Authorization headers for a request.
+ * Returns an empty object when no token is set (e.g. when a proxy injects
+ * its own credentials), so no Authorization header is sent at all.
+ */
+export function authHeaders(token?: string): Record<string, string> {
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
+/**
+ * Route a FastMail API URL through a proxy.
+ *
+ * The proxy base URL (e.g. `https://proxy.example.com/fastmail`) replaces
+ * the FastMail API base (`https://api.fastmail.com`); the remainder of the
+ * path is preserved. URLs that do not point at the FastMail API base are
+ * returned unchanged, so the function is safe to apply repeatedly.
+ */
+export function applyProxy(url: string, proxyUrl?: string): string {
+  if (!proxyUrl || !url.startsWith(FASTMAIL_API_BASE)) {
+    return url;
+  }
+  return `${proxyUrl.replace(/\/+$/, "")}${url.slice(FASTMAIL_API_BASE.length)}`;
 }
 
 let callIdCounter = 0;
@@ -48,13 +75,24 @@ function generateCallId(): string {
 }
 
 export class JmapClient {
-  private token: string;
+  private token?: string;
   private sessionUrl: string;
+  private proxyUrl?: string;
   private session: JmapSession | null = null;
 
   constructor(options: JmapClientOptions) {
     this.token = options.token;
-    this.sessionUrl = options.sessionUrl ?? JMAP_SESSION_URL;
+    this.proxyUrl = options.proxyUrl?.replace(/\/+$/, "");
+    this.sessionUrl =
+      options.sessionUrl ?? applyProxy(JMAP_SESSION_URL, this.proxyUrl);
+  }
+
+  /**
+   * Route an arbitrary FastMail URL (e.g. a session downloadUrl template)
+   * through the configured proxy.
+   */
+  resolveUrl(url: string): string {
+    return applyProxy(url, this.proxyUrl);
   }
 
   /**
@@ -67,9 +105,7 @@ export class JmapClient {
     }
 
     const response = await fetch(this.sessionUrl, {
-      headers: {
-        Authorization: `Bearer ${this.token}`,
-      },
+      headers: authHeaders(this.token),
     });
 
     if (!response.ok) {
@@ -80,7 +116,19 @@ export class JmapClient {
       );
     }
 
-    this.session = (await response.json()) as JmapSession;
+    const session = (await response.json()) as JmapSession;
+
+    // When proxying, rewrite the URLs advertised by the session so that API,
+    // upload, and download requests stay on the proxy as well.
+    this.session = this.proxyUrl
+      ? {
+          ...session,
+          apiUrl: applyProxy(session.apiUrl, this.proxyUrl),
+          downloadUrl: applyProxy(session.downloadUrl, this.proxyUrl),
+          uploadUrl: applyProxy(session.uploadUrl, this.proxyUrl),
+          eventSourceUrl: applyProxy(session.eventSourceUrl, this.proxyUrl),
+        }
+      : session;
     return this.session;
   }
 
@@ -108,10 +156,10 @@ export class JmapClient {
   }
 
   /**
-   * Get the API token.
+   * Get the API token, if one is configured.
    * Used for blob download/upload operations.
    */
-  getToken(): string {
+  getToken(): string | undefined {
     return this.token;
   }
 
@@ -137,7 +185,7 @@ export class JmapClient {
     const response = await fetch(session.apiUrl, {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${this.token}`,
+        ...authHeaders(this.token),
         "Content-Type": "application/json",
       },
       body: JSON.stringify(request),

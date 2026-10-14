@@ -9,8 +9,7 @@ import {
   parseArgs,
   wantsHelp,
 } from "../args.ts";
-import { loadConfig } from "../config.ts";
-import { JmapClient } from "../jmap/client.ts";
+import { createClient } from "../auth.ts";
 import { getMailboxes, type Mailbox, setMailboxes } from "../jmap/mailbox.ts";
 
 /** Common options for mailbox commands */
@@ -20,22 +19,6 @@ const MAILBOX_OPTIONS = {
   name: { type: "string" as const },
   force: { type: "boolean" as const },
 };
-
-/**
- * Get authenticated JMAP client.
- */
-async function getClient(): Promise<JmapClient> {
-  const envToken = process.env.FASTMAIL_API_TOKEN;
-  const config = await loadConfig();
-
-  const token = envToken || config.apiToken;
-  if (!token) {
-    console.error("Error: Not authenticated. Run 'fastmail auth login' first.");
-    process.exit(1);
-  }
-
-  return new JmapClient({ token });
-}
 
 /**
  * Build tree structure from flat mailbox list.
@@ -119,7 +102,7 @@ Options:
     return;
   }
 
-  const client = await getClient();
+  const client = await createClient();
   const result = await getMailboxes(client);
 
   if (getBoolean(parsed, "tree")) {
@@ -155,7 +138,7 @@ Options:
 
   const parentId = getString(parsed, "parent");
 
-  const client = await getClient();
+  const client = await createClient();
   const result = await setMailboxes(client, {
     create: {
       new: {
@@ -217,7 +200,7 @@ Options:
     process.exit(1);
   }
 
-  const client = await getClient();
+  const client = await createClient();
   const result = await setMailboxes(client, {
     update: {
       [id]: updates,
@@ -256,7 +239,7 @@ Options:
 
   const force = getBoolean(parsed, "force");
 
-  const client = await getClient();
+  const client = await createClient();
   const result = await setMailboxes(client, {
     destroy: [id],
     onDestroyRemoveEmails: force,

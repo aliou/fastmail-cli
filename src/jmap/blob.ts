@@ -4,6 +4,7 @@
  */
 
 import type { JmapClient } from "./client.ts";
+import { authHeaders } from "./client.ts";
 import { JMAP_MAIL_CAPABILITY } from "./types.ts";
 
 /**
@@ -20,16 +21,16 @@ export async function downloadBlob(
   const accountId = await client.getPrimaryAccountId(JMAP_MAIL_CAPABILITY);
 
   // downloadUrl template: https://.../{accountId}/{blobId}/{name}?type={type}
-  const url = session.downloadUrl
+  // resolveUrl keeps blob requests on the configured proxy, if any.
+  const url = client
+    .resolveUrl(session.downloadUrl)
     .replace("{accountId}", encodeURIComponent(accountId))
     .replace("{blobId}", encodeURIComponent(blobId))
     .replace("{name}", encodeURIComponent(name ?? "attachment"))
     .replace("{type}", encodeURIComponent(type ?? "application/octet-stream"));
 
   const response = await fetch(url, {
-    headers: {
-      Authorization: `Bearer ${client.getToken()}`,
-    },
+    headers: authHeaders(client.getToken()),
   });
 
   if (!response.ok) {
@@ -80,15 +81,15 @@ export async function uploadBlob(
   const accountId = await client.getPrimaryAccountId(JMAP_MAIL_CAPABILITY);
 
   // uploadUrl template: https://.../{accountId}/
-  const url = session.uploadUrl.replace(
-    "{accountId}",
-    encodeURIComponent(accountId),
-  );
+  // resolveUrl keeps blob requests on the configured proxy, if any.
+  const url = client
+    .resolveUrl(session.uploadUrl)
+    .replace("{accountId}", encodeURIComponent(accountId));
 
   const response = await fetch(url, {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${client.getToken()}`,
+      ...authHeaders(client.getToken()),
       "Content-Type": type,
     },
     body: data,

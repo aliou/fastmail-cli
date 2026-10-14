@@ -79,6 +79,56 @@ fastmail --completion fish | source
 
 Config file: `~/.config/fastmail-cli/config.json`
 
+| Key | Description |
+| --- | --- |
+| `apiToken` | FastMail API token |
+| `defaultAccountId` | Default account ID (if multiple accounts) |
+| `proxyUrl` | Base URL of an HTTP proxy for the FastMail API (see below) |
+| `outputFormat` | Default output format (`table` or `json`) |
+
+Environment variables override the config file:
+
+- `FASTMAIL_API_TOKEN` — API token
+- `FASTMAIL_PROXY_URL` — proxy base URL
+
+### HTTP proxy
+
+All requests normally go directly to `https://api.fastmail.com`. To route
+them through an HTTP API proxy (e.g. an API gateway that fronts the FastMail
+API), set the proxy base URL:
+
+```bash
+export FASTMAIL_PROXY_URL="https://proxy.example.com/fastmail"
+fastmail email list
+```
+
+or persist it in the config file:
+
+```json
+{
+  "proxyUrl": "https://proxy.example.com/fastmail"
+}
+```
+
+The proxy base replaces `https://api.fastmail.com`, and the rest of each path
+is preserved, so every JMAP endpoint (session discovery, API calls, blob
+upload/download) stays on the proxy:
+
+```text
+direct:  https://api.fastmail.com/jmap/session
+proxy:   https://proxy.example.com/fastmail/jmap/session
+```
+
+The URLs advertised by the JMAP session response (`apiUrl`, `uploadUrl`,
+`downloadUrl`) are rewritten the same way, so nothing bypasses the proxy.
+The proxy must therefore forward to `https://api.fastmail.com` as its
+upstream, preserving the `/jmap/...` paths.
+
+Authentication normally uses your FastMail API token (`Authorization: Bearer
+...`). When a proxy is configured, the token becomes optional: it is still
+sent when present, but a proxy that injects its own credentials will replace
+or ignore it — so with such a proxy no token is needed at all.
+
 ## Development
 
 ```bash

@@ -3,8 +3,8 @@
  */
 
 import { getPositional, getString, parseArgs, wantsHelp } from "../args.ts";
-import { loadConfig } from "../config.ts";
-import { JmapClient } from "../jmap/client.ts";
+import { createClient } from "../auth.ts";
+import type { JmapClient } from "../jmap/client.ts";
 import { type EmailBodyPart, getEmails, setEmails } from "../jmap/email.ts";
 import { getThreads } from "../jmap/thread.ts";
 import { JMAP_MAIL_CAPABILITY } from "../jmap/types.ts";
@@ -17,23 +17,6 @@ const THREAD_OPTIONS = {
   "add-keyword": { type: "string" as const },
   "remove-keyword": { type: "string" as const },
 };
-
-/**
- * Get authenticated JMAP client.
- */
-async function getClient(): Promise<JmapClient> {
-  const envToken = process.env.FASTMAIL_API_TOKEN;
-  const config = await loadConfig();
-  const token = envToken ?? config.apiToken;
-
-  if (!token) {
-    throw new Error(
-      "Not authenticated. Run 'fastmail auth login' or set FASTMAIL_API_TOKEN",
-    );
-  }
-
-  return new JmapClient({ token });
-}
 
 /**
  * Resolve mailbox name to ID.
@@ -102,7 +85,7 @@ Options:
     process.exit(1);
   }
 
-  const client = await getClient();
+  const client = await createClient();
   const bodyType = getString(parsed, "body-type") ?? "none";
 
   // 1. Get thread to get emailIds
@@ -220,7 +203,7 @@ Examples:
     process.exit(1);
   }
 
-  const client = await getClient();
+  const client = await createClient();
 
   // 1. Get thread to get emailIds
   const threadResult = await getThreads(client, { ids: [threadId] });
@@ -314,7 +297,7 @@ Options:
     process.exit(1);
   }
 
-  const client = await getClient();
+  const client = await createClient();
 
   // 1. Get thread to get emailIds
   const threadResult = await getThreads(client, { ids: [threadId] });

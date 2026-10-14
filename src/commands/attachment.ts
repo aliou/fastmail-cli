@@ -6,9 +6,8 @@ import { existsSync, mkdirSync } from "node:fs";
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { getPositional, getString, parseArgs, wantsHelp } from "../args.ts";
-import { loadConfig } from "../config.ts";
+import { createClient } from "../auth.ts";
 import { downloadBlob } from "../jmap/blob.ts";
-import { JmapClient } from "../jmap/client.ts";
 import { type EmailBodyPart, getEmails } from "../jmap/email.ts";
 
 /** Common options for attachment commands */
@@ -16,23 +15,6 @@ const ATTACHMENT_OPTIONS = {
   output: { type: "string" as const, short: "o" },
   dir: { type: "string" as const, short: "d" },
 };
-
-/**
- * Get authenticated JMAP client.
- */
-async function getClient(): Promise<JmapClient> {
-  const envToken = process.env.FASTMAIL_API_TOKEN;
-  const config = await loadConfig();
-  const token = envToken ?? config.apiToken;
-
-  if (!token) {
-    throw new Error(
-      "Not authenticated. Run 'fastmail auth login' or set FASTMAIL_API_TOKEN",
-    );
-  }
-
-  return new JmapClient({ token });
-}
 
 /**
  * Format attachment info for output.
@@ -73,7 +55,7 @@ Options:
     process.exit(1);
   }
 
-  const client = await getClient();
+  const client = await createClient();
 
   const result = await getEmails(client, {
     ids: [emailId],
@@ -125,7 +107,7 @@ Options:
     process.exit(1);
   }
 
-  const client = await getClient();
+  const client = await createClient();
 
   // Verify email exists and get attachment metadata
   const result = await getEmails(client, {
@@ -195,7 +177,7 @@ Options:
     process.exit(1);
   }
 
-  const client = await getClient();
+  const client = await createClient();
 
   // Get email with attachments
   const result = await getEmails(client, {

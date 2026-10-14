@@ -10,8 +10,8 @@ import {
   parseArgs,
   wantsHelp,
 } from "../args.ts";
-import { loadConfig } from "../config.ts";
-import { JmapClient } from "../jmap/client.ts";
+import { createClient } from "../auth.ts";
+import type { JmapClient } from "../jmap/client.ts";
 import {
   type Email,
   type EmailAddress,
@@ -38,23 +38,6 @@ const DRAFT_OPTIONS = {
   stdin: { type: "boolean" as const },
   html: { type: "boolean" as const },
 };
-
-/**
- * Get authenticated JMAP client.
- */
-async function getClient(): Promise<JmapClient> {
-  const envToken = process.env.FASTMAIL_API_TOKEN;
-  const config = await loadConfig();
-  const token = envToken ?? config.apiToken;
-
-  if (!token) {
-    throw new Error(
-      "Not authenticated. Run 'fastmail auth login' or set FASTMAIL_API_TOKEN",
-    );
-  }
-
-  return new JmapClient({ token });
-}
 
 /**
  * Parse email addresses from comma-separated string.
@@ -154,7 +137,7 @@ Options:
     return;
   }
 
-  const client = await getClient();
+  const client = await createClient();
   const limit = getNumber(parsed, "limit") ?? 20;
 
   // Get drafts mailbox ID
@@ -211,7 +194,7 @@ Options:
     process.exit(1);
   }
 
-  const client = await getClient();
+  const client = await createClient();
   const bodyType = getString(parsed, "body-type") ?? "text";
 
   const getResult = await getEmails(client, {
@@ -297,7 +280,7 @@ Examples:
     }
   }
 
-  const client = await getClient();
+  const client = await createClient();
 
   // Get drafts mailbox ID
   const draftsMailboxId = await getDraftsMailboxId(client);
@@ -385,7 +368,7 @@ Options:
     process.exit(1);
   }
 
-  const client = await getClient();
+  const client = await createClient();
 
   const result = await setEmails(client, {
     destroy: [draftId],
@@ -427,7 +410,7 @@ Options:
     process.exit(1);
   }
 
-  const client = await getClient();
+  const client = await createClient();
 
   // Get draft to verify it exists and has recipients
   const getResult = await getEmails(client, {
@@ -543,7 +526,7 @@ Examples:
     process.exit(1);
   }
 
-  const client = await getClient();
+  const client = await createClient();
 
   // Fetch existing draft
   const getResult = await getEmails(client, {

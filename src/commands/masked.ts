@@ -3,8 +3,8 @@
  */
 
 import { getPositional, getString, parseArgs, wantsHelp } from "../args.ts";
-import { loadConfig } from "../config.ts";
-import { JmapClient } from "../jmap/client.ts";
+import { createClient } from "../auth.ts";
+import type { JmapClient } from "../jmap/client.ts";
 import {
   getMaskedEmails,
   MASKED_EMAIL_CAPABILITY,
@@ -19,22 +19,6 @@ const MASKED_OPTIONS = {
   "for-domain": { type: "string" as const },
   prefix: { type: "string" as const },
 };
-
-/**
- * Get authenticated JMAP client.
- */
-async function getClient(): Promise<JmapClient> {
-  const envToken = process.env.FASTMAIL_API_TOKEN;
-  const config = await loadConfig();
-
-  const token = envToken || config.apiToken;
-  if (!token) {
-    console.error("Error: Not authenticated. Run 'fastmail auth login' first.");
-    process.exit(1);
-  }
-
-  return new JmapClient({ token });
-}
 
 /**
  * Check if masked email capability is available.
@@ -76,7 +60,7 @@ Options:
     return;
   }
 
-  const client = await getClient();
+  const client = await createClient();
   await checkCapability(client);
 
   const result = await getMaskedEmails(client);
@@ -116,7 +100,7 @@ Example:
     return;
   }
 
-  const client = await getClient();
+  const client = await createClient();
   await checkCapability(client);
 
   const createObj: {
@@ -185,7 +169,7 @@ Example:
     return;
   }
 
-  const client = await getClient();
+  const client = await createClient();
   await checkCapability(client);
 
   const updates: {
@@ -270,7 +254,7 @@ from your account history.
     return;
   }
 
-  const client = await getClient();
+  const client = await createClient();
   await checkCapability(client);
 
   const result = await setMaskedEmails(client, {
