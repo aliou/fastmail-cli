@@ -37,21 +37,18 @@ bun run build        # compile binaries for all platforms
 2. Create `src/commands/<resource>.ts`.
 3. Define options object, import helpers from `../args.ts`.
 4. Export named async functions (`listX`, `getX`, `createX`, etc.) that take `args: string[]`.
-5. Each function should: parse args, check `wantsHelp()`, get token via `getApiToken()`, create `JmapClient`, make JMAP calls, format output.
-6. Add handler function in `src/index.ts` with dynamic import using `.js` extension.
-7. Add to the switch statement in `main()`.
-8. Update `printHelp()` in `src/cli.ts`.
-9. Update shell completions in `src/cli.ts` (bash, zsh, fish).
-10. Add tests as `src/commands/<resource>.test.ts` using `bun:test` with `bun-bagel` for mocking.
+5. Each function should parse args, check `wantsHelp()`, validate input, then call `getClient()` from `src/client.ts`.
+6. Register the command, subcommands, aliases, examples, flags, and lazy handler in `src/commands/registry.ts`. Routing, help, and completions consume this registry.
+7. Use `resolveMailboxId()` from `src/mailbox-resolver.ts` for mailbox names, roles, and IDs.
+8. Add handler tests with `bun-bagel` and entrypoint tests in `src/cli.test.ts` for routing, streams, and exit codes.
 
 ## Conventions
 
-- Command files use `.ts` import extensions internally. `src/index.ts` uses `.js` extensions for dynamic imports.
-- All commands support `--help` and `--json` flags.
-- Auth token resolution: `FASTMAIL_API_TOKEN` env var > config file.
-- Use `JmapClient` from `src/jmap/client.ts` for all API calls.
-- Use `parseArgs()` from `src/args.ts` for argument parsing with named option definitions.
-- Error messages go to `console.error`, exit with `process.exit(1)`.
+- Command files use `.ts` import extensions internally. Registry dynamic imports use `.js` extensions.
+- All commands support `--help`. Structured commands support `--json`; URL commands print plain text.
+- Use `getClient()` for authenticated commands and `parseArgs()` for strict argument parsing.
+- Throw `usageError()` for exit 2 and `runtimeError()` for exit 1. Handlers do not call `process.exit()`.
+- Write data to stdout and progress, warnings, and confirmations to stderr.
 - Biome for linting/formatting (2-space indent, double quotes), tsc for type checking. Run both before committing.
 - Commit messages follow Conventional Commits.
 - Tests use `bun:test` with `bun-bagel` for HTTP mocking. Colocated as `*.test.ts`.

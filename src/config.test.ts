@@ -56,18 +56,15 @@ describe("config", () => {
 
   describe("validateConfig", () => {
     test("returns default config for null input", () => {
-      const config = validateConfig(null);
-      expect(config).toEqual({ outputFormat: "table" });
+      expect(validateConfig(null)).toEqual({});
     });
 
     test("returns default config for undefined input", () => {
-      const config = validateConfig(undefined);
-      expect(config).toEqual({ outputFormat: "table" });
+      expect(validateConfig(undefined)).toEqual({});
     });
 
     test("returns default config for non-object input", () => {
-      const config = validateConfig("not an object");
-      expect(config).toEqual({ outputFormat: "table" });
+      expect(validateConfig("not an object")).toEqual({});
     });
 
     test("extracts valid apiToken", () => {
@@ -85,31 +82,13 @@ describe("config", () => {
       expect(config.defaultAccountId).toBe("account-123");
     });
 
-    test("extracts valid outputFormat json", () => {
-      const config = validateConfig({ outputFormat: "json" });
-      expect(config.outputFormat).toBe("json");
-    });
-
-    test("extracts valid outputFormat table", () => {
-      const config = validateConfig({ outputFormat: "table" });
-      expect(config.outputFormat).toBe("table");
-    });
-
-    test("ignores invalid outputFormat", () => {
-      const config = validateConfig({ outputFormat: "csv" });
-      expect(config.outputFormat).toBe("table"); // default
-    });
-
     test("strips unknown fields", () => {
       const config = validateConfig({
         apiToken: "token",
         unknownField: "value",
         anotherUnknown: 123,
       });
-      expect(config).toEqual({
-        apiToken: "token",
-        outputFormat: "table",
-      });
+      expect(config).toEqual({ apiToken: "token" });
     });
   });
 
@@ -121,7 +100,7 @@ describe("config", () => {
       );
 
       const config = await loadConfig();
-      expect(config).toEqual({ outputFormat: "table" });
+      expect(config).toEqual({});
     });
 
     test("loads config from file", async () => {
@@ -137,8 +116,7 @@ describe("config", () => {
       );
 
       const config = await loadConfig();
-      expect(config.apiToken).toBe("saved-token");
-      expect(config.outputFormat).toBe("json");
+      expect(config).toEqual({ apiToken: "saved-token" });
     });
 
     test("returns default config for invalid JSON", async () => {
@@ -156,7 +134,7 @@ describe("config", () => {
       );
 
       const config = await loadConfig();
-      expect(config).toEqual({ outputFormat: "table" });
+      expect(config).toEqual({});
 
       consoleErrorSpy.mockRestore();
     });
@@ -171,7 +149,7 @@ describe("config", () => {
         testPath,
       );
 
-      await saveConfig({ apiToken: "new-token", outputFormat: "json" });
+      await saveConfig({ apiToken: "new-token" });
 
       // Verify file was created
       const file = Bun.file(testPath);
@@ -198,7 +176,7 @@ describe("config", () => {
         TEST_CONFIG_PATH,
       );
 
-      await saveConfig({ apiToken: "new-token", outputFormat: "table" });
+      await saveConfig({ apiToken: "new-token" });
 
       const file = Bun.file(TEST_CONFIG_PATH);
       const content = await file.json();
@@ -211,7 +189,7 @@ describe("config", () => {
       // Write initial config
       await Bun.write(
         TEST_CONFIG_PATH,
-        JSON.stringify({ apiToken: "existing-token", outputFormat: "table" }),
+        JSON.stringify({ apiToken: "existing-token" }),
       );
 
       // Mock to use test path
@@ -219,16 +197,16 @@ describe("config", () => {
         TEST_CONFIG_PATH,
       );
 
-      const updated = await updateConfig({ outputFormat: "json" });
+      const updated = await updateConfig({ defaultAccountId: "account-123" });
 
-      expect(updated.apiToken).toBe("existing-token"); // preserved
-      expect(updated.outputFormat).toBe("json"); // updated
+      expect(updated.apiToken).toBe("existing-token");
+      expect(updated.defaultAccountId).toBe("account-123");
 
       // Verify persisted
       const file = Bun.file(TEST_CONFIG_PATH);
       const content = await file.json();
       expect(content.apiToken).toBe("existing-token");
-      expect(content.outputFormat).toBe("json");
+      expect(content.defaultAccountId).toBe("account-123");
     });
   });
 

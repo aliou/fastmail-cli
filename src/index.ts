@@ -1,496 +1,187 @@
 #!/usr/bin/env bun
+import { hasHelp } from "./args.ts";
 import {
-  getAuthStatus,
-  login,
-  logout,
-  promptForToken,
-  readTokenFromStdin,
-} from "./auth";
-import { parseArgs, printCompletion, printHelp, printVersion } from "./cli";
-import {
-  downloadAllAttachments,
-  getAttachment,
-  listAttachments,
-} from "./commands/attachment";
-import {
-  markRead as batchMarkRead,
-  markUnread as batchMarkUnread,
-  deleteEmails,
-  flagEmails,
-  modifyEmails,
-  moveEmails,
-  unflagEmails,
-} from "./commands/batch";
-import {
-  createDraft,
-  deleteDraft,
-  getDraft,
-  listDrafts,
-  sendDraft,
-  updateDraft,
-} from "./commands/draft";
-import {
-  markRead as emailMarkRead,
-  markUnread as emailMarkUnread,
-  getEmail,
-  listEmails,
-  searchEmails,
-  sendEmail,
-} from "./commands/email";
-import {
-  createMailbox,
-  deleteMailbox,
-  listMailboxes,
-  updateMailbox,
-} from "./commands/mailbox";
-import {
-  createMaskedEmail,
-  deleteMaskedEmail,
-  listMaskedEmails,
-  updateMaskedEmail,
-} from "./commands/masked";
-import { getThread, modifyThread, threadAttachments } from "./commands/thread";
-import {
-  batchUnsubscribe,
-  executeUnsubscribe,
-  showUnsubscribe,
-} from "./commands/unsubscribe";
-import { urlCommand } from "./commands/url";
-import { getConfigPath } from "./config";
+  leafHelp,
+  printCompletion,
+  printConciseHelp,
+  printGroupHelp,
+  printHelp,
+  printVersion,
+} from "./cli.ts";
+import { commands, findCommand, findSubcommand } from "./commands/registry.ts";
+import { APP_NAME } from "./constants.ts";
+import { CliError, usageError } from "./error.ts";
+import { invocationArgs } from "./runtime.ts";
 
-async function main(): Promise<void> {
-  // Bun compiled binary: process.argv = ["/path/to/binary", "arg1", "arg2", ...]
-  // bun run script.ts:   process.argv = ["/path/to/bun", "/path/to/script.ts", "arg1", ...]
-  // The compiled binary path won't end in .ts or .js
-  const scriptPath = process.argv[1] ?? "";
-  const isCompiledBinary =
-    !scriptPath.endsWith(".ts") &&
-    !scriptPath.endsWith(".js") &&
-    !scriptPath.includes("bun");
-  const args = process.argv.slice(isCompiledBinary ? 1 : 2);
-  const options = parseArgs(args);
-
-  if (options.version) {
-    printVersion();
-    process.exit(0);
+function distance(left: string, right: string): number {
+  const row = Array.from({ length: right.length + 1 }, (_, index) => index);
+  for (let i = 1; i <= left.length; i++) {
+    let diagonal = row[0] ?? 0;
+    row[0] = i;
+    for (let j = 1; j <= right.length; j++) {
+      const saved = row[j] ?? 0;
+      row[j] = Math.min(
+        (row[j] ?? 0) + 1,
+        (row[j - 1] ?? 0) + 1,
+        diagonal + (left[i - 1] === right[j - 1] ? 0 : 1),
+      );
+      diagonal = saved;
+    }
   }
+  return row[right.length] ?? 0;
+}
 
-  if (options.completion) {
-    const success = printCompletion(options.completion);
-    process.exit(success ? 0 : 1);
-  }
+function suggestion(input: string, candidates: string[]): string {
+  const closest = candidates
+    .map((name) => ({ name, score: distance(input, name) }))
+    .sort((a, b) => a.score - b.score)[0];
+  return closest && closest.score <= 3
+    ? ` Did you mean '${closest.name}'?`
+    : "";
+}
 
-  // Show global help only if no command specified
-  if (!options.command) {
+async function showHelp(args: string[]): Promise<void> {
+  if (args.length === 0) {
     printHelp();
-    process.exit(options.help ? 0 : 1);
+    return;
   }
-
-  // Pass help flag to subcommand handlers
-  const subcommandArgs = options.help
-    ? ["--help", ...options.args]
-    : options.args;
-
-  // Route to command handlers
-  switch (options.command) {
-    case "auth":
-      await handleAuth(options.subcommand, subcommandArgs);
-      break;
-    case "batch":
-      await handleBatch(options.subcommand, subcommandArgs);
-      break;
-    case "email":
-      await handleEmail(options.subcommand, subcommandArgs);
-      break;
-    case "mailbox":
-      await handleMailbox(options.subcommand, subcommandArgs);
-      break;
-    case "masked":
-      await handleMasked(options.subcommand, subcommandArgs);
-      break;
-    case "unsubscribe":
-      await handleUnsubscribe(options.subcommand, subcommandArgs);
-      break;
-    case "attachment":
-      await handleAttachment(options.subcommand, subcommandArgs);
-      break;
-    case "thread":
-      await handleThread(options.subcommand, subcommandArgs);
-      break;
-    case "draft":
-    case "drafts":
-      await handleDraft(options.subcommand, subcommandArgs);
-      break;
-    case "url":
-      await handleUrl(options.subcommand, subcommandArgs);
-      break;
-    default:
-      console.error(`Unknown command: ${options.command}`);
-      printHelp();
-      process.exit(1);
+  const command = findCommand(args[0] ?? "");
+  if (!command) {
+    throw usageError(
+      `Unknown command: ${args[0]}.${suggestion(
+        args[0] ?? "",
+        commands.map((item) => item.name),
+      )}`,
+    );
   }
+  if (args.length === 1) {
+    printGroupHelp(command);
+    return;
+  }
+  const subcommand = findSubcommand(command, args[1] ?? "");
+  if (!subcommand) {
+    throw usageError(
+      `Unknown subcommand: ${args[1]}.${suggestion(
+        args[1] ?? "",
+        command.subcommands.map((item) => item.name),
+      )}`,
+    );
+  }
+  if (args.length > 2)
+    throw usageError("help accepts at most a command and subcommand");
+  await leafHelp(subcommand);
 }
 
-function parseAuthArgs(args: string[]): { token?: string; help: boolean } {
-  let token: string | undefined;
-  let help = false;
-
-  for (let i = 0; i < args.length; i++) {
-    const arg = args[i];
-    if (arg === "-h" || arg === "--help") {
-      help = true;
-    } else if (arg === "--token" && args[i + 1]) {
-      token = args[i + 1];
-      i++;
-    } else if (arg?.startsWith("--token=")) {
-      token = arg.slice(8);
-    }
+async function showInlineHelp(args: string[]): Promise<void> {
+  const command = args.map(findCommand).find((item) => item !== undefined);
+  if (!command) {
+    printHelp();
+    return;
   }
-
-  return { token, help };
+  const commandIndex = args.findIndex((arg) => findCommand(arg) === command);
+  const subcommandName = args
+    .slice(commandIndex + 1)
+    .find((arg) => findSubcommand(command, arg));
+  if (!subcommandName) {
+    printGroupHelp(command);
+    return;
+  }
+  const subcommand = findSubcommand(command, subcommandName);
+  if (subcommand) await leafHelp(subcommand);
 }
 
-async function handleAuth(
-  subcommand: string | null,
-  args: string[],
-): Promise<void> {
-  const parsed = parseAuthArgs(args);
-
-  switch (subcommand) {
-    case "login": {
-      if (parsed.help) {
-        console.log(`
-Usage: fastmail auth login [--token <token>]
-
-Authenticate with FastMail using an API token.
-
-Options:
-  --token <token>  API token (can also be piped via stdin)
-  -h, --help       Show this help
-
-Get your API token from:
-  FastMail Settings > Privacy & Security > API tokens
-`);
-        return;
-      }
-
-      // Get token from: 1) --token flag, 2) stdin, 3) interactive prompt
-      let token = parsed.token;
-
-      if (!token) {
-        token = (await readTokenFromStdin()) ?? undefined;
-      }
-
-      if (!token) {
-        token = await promptForToken();
-      }
-
-      if (!token) {
-        console.error("Error: No API token provided");
-        process.exit(1);
-      }
-
-      console.log("Validating token...");
-      const result = await login(token);
-
-      if (result.success) {
-        console.log(`Authenticated as: ${result.username}`);
-        if (result.accountName) {
-          console.log(`Primary account: ${result.accountName}`);
-        }
-        console.log(`Token saved to: ${getConfigPath()}`);
-      } else {
-        console.error(`Login failed: ${result.error}`);
-        process.exit(1);
-      }
-      break;
-    }
-
-    case "logout": {
-      if (parsed.help) {
-        console.log(`
-Usage: fastmail auth logout
-
-Remove stored API token from config file.
-
-Options:
-  -h, --help  Show this help
-`);
-        return;
-      }
-
-      await logout();
-      console.log("Logged out. Token removed from config.");
-      break;
-    }
-
-    case "status": {
-      if (parsed.help) {
-        console.log(`
-Usage: fastmail auth status
-
-Show current authentication status.
-
-Options:
-  -h, --help  Show this help
-`);
-        return;
-      }
-
-      const status = await getAuthStatus();
-
-      if (status.authenticated) {
-        console.log(`Status: Authenticated`);
-        console.log(`User: ${status.username}`);
-        if (status.accountName) {
-          console.log(`Account: ${status.accountName}`);
-        }
-        console.log(
-          `Token source: ${status.tokenSource === "env" ? "FASTMAIL_API_TOKEN env var" : "config file"}`,
-        );
-      } else {
-        console.log(`Status: Not authenticated`);
-        if (status.error) {
-          console.log(`Reason: ${status.error}`);
-        }
-        if (status.tokenSource) {
-          console.log(
-            `Token source: ${status.tokenSource === "env" ? "FASTMAIL_API_TOKEN env var" : "config file"}`,
-          );
-        }
-        process.exit(1);
-      }
-      break;
-    }
-
-    default:
-      console.error(
-        `Usage: fastmail auth <login|logout|status>\n\nSubcommands:\n  login   Authenticate with API token\n  logout  Remove stored credentials\n  status  Show authentication status`,
+async function dispatch(args: string[]): Promise<void> {
+  if (args.length === 0) {
+    printConciseHelp();
+    return;
+  }
+  if (hasHelp(args)) {
+    if (args[0] === "help")
+      await showHelp(
+        args.slice(1).filter((arg) => arg !== "--help" && arg !== "-h"),
       );
-      process.exit(1);
+    else await showInlineHelp(args);
+    return;
   }
+  const separator = args.indexOf("--");
+  const globalArgs = separator === -1 ? args : args.slice(0, separator);
+  if (globalArgs.includes("--version") || globalArgs.includes("-v")) {
+    printVersion();
+    return;
+  }
+  if (args[0] === "help") {
+    await showHelp(args.slice(1));
+    return;
+  }
+  if (args[0] === "--completion" || args[0]?.startsWith("--completion=")) {
+    const shell = args[0].includes("=")
+      ? args[0].slice("--completion=".length)
+      : args[1];
+    if (!shell || args.length > 2)
+      throw usageError("Usage: fastmail --completion <bash|zsh|fish>");
+    console.error(
+      "fastmail: --completion is deprecated; use 'fastmail completion <shell>' instead",
+    );
+    printCompletion(shell);
+    return;
+  }
+
+  const commandName = args[0];
+  if (!commandName || commandName.startsWith("-"))
+    throw usageError(`Unknown option: ${commandName}`);
+  const command = findCommand(commandName);
+  if (!command) {
+    throw usageError(
+      `Unknown command: ${commandName}.${suggestion(
+        commandName,
+        commands.map((item) => item.name),
+      )}`,
+    );
+  }
+  const subcommandName = args[1];
+  if (!subcommandName)
+    throw usageError(
+      `Missing subcommand for '${command.name}'. Run 'fastmail help ${command.name}'.`,
+    );
+  const subcommand = findSubcommand(command, subcommandName);
+  if (!subcommand) {
+    if (subcommandName.startsWith("-"))
+      throw usageError(`Unknown option: ${subcommandName}`);
+    throw usageError(
+      `Unknown subcommand: ${subcommandName}.${suggestion(
+        subcommandName,
+        command.subcommands.map((item) => item.name),
+      )}`,
+    );
+  }
+  if (!subcommand.load)
+    throw usageError(`Command not available: ${commandName} ${subcommandName}`);
+  const run = await subcommand.load();
+  await run(args.slice(2));
 }
 
-async function handleEmail(
-  subcommand: string | null,
-  args: string[],
-): Promise<void> {
-  switch (subcommand) {
-    case "list":
-      await listEmails(args);
-      break;
-    case "get":
-      await getEmail(args);
-      break;
-    case "send":
-      await sendEmail(args);
-      break;
-    case "search":
-      await searchEmails(args);
-      break;
-    case "mark-read":
-      await emailMarkRead(args);
-      break;
-    case "mark-unread":
-      await emailMarkUnread(args);
-      break;
-    default:
+export async function main(args: string[]): Promise<number> {
+  const separator = args.indexOf("--");
+  const globalArgs = separator === -1 ? args : args.slice(0, separator);
+  const verbose = globalArgs.includes("--verbose");
+  const cleanArgs = args.filter(
+    (arg, index) =>
+      arg !== "--verbose" || (separator !== -1 && index > separator),
+  );
+  try {
+    await dispatch(cleanArgs);
+    return 0;
+  } catch (error) {
+    const exitCode = error instanceof CliError ? error.exitCode : 1;
+    if (verbose || process.env.FASTMAIL_DEBUG === "1") console.error(error);
+    else
       console.error(
-        `Usage: fastmail email <list|get|send|search|mark-read|mark-unread>\n\nSubcommands:\n  list        List emails in a mailbox\n  get         Get email by ID\n  send        Send an email\n  search      Search emails\n  mark-read   Mark emails as read\n  mark-unread Mark emails as unread`,
+        `${APP_NAME}: ${error instanceof Error ? error.message : String(error)}`,
       );
-      process.exit(1);
+    return exitCode;
   }
 }
 
-async function handleMailbox(
-  subcommand: string | null,
-  args: string[],
-): Promise<void> {
-  switch (subcommand) {
-    case "list":
-      await listMailboxes(args);
-      break;
-    case "create":
-      await createMailbox(args);
-      break;
-    case "update":
-      await updateMailbox(args);
-      break;
-    case "delete":
-      await deleteMailbox(args);
-      break;
-    default:
-      console.error(
-        `Usage: fastmail mailbox <list|create|update|delete>\n\nSubcommands:\n  list    List all mailboxes\n  create  Create a mailbox\n  update  Update a mailbox\n  delete  Delete a mailbox`,
-      );
-      process.exit(1);
-  }
+if (import.meta.main) {
+  process.exitCode = await main(invocationArgs());
 }
-
-async function handleMasked(
-  subcommand: string | null,
-  args: string[],
-): Promise<void> {
-  switch (subcommand) {
-    case "list":
-      await listMaskedEmails(args);
-      break;
-    case "create":
-      await createMaskedEmail(args);
-      break;
-    case "update":
-      await updateMaskedEmail(args);
-      break;
-    case "delete":
-      await deleteMaskedEmail(args);
-      break;
-    default:
-      console.error(
-        `Usage: fastmail masked <list|create|update|delete>\n\nSubcommands:\n  list    List masked email addresses\n  create  Create a masked email\n  update  Update a masked email\n  delete  Delete a masked email`,
-      );
-      process.exit(1);
-  }
-}
-
-async function handleBatch(
-  subcommand: string | null,
-  args: string[],
-): Promise<void> {
-  switch (subcommand) {
-    case "read":
-      await batchMarkRead(args);
-      break;
-    case "unread":
-      await batchMarkUnread(args);
-      break;
-    case "flag":
-      await flagEmails(args);
-      break;
-    case "unflag":
-      await unflagEmails(args);
-      break;
-    case "move":
-      await moveEmails(args);
-      break;
-    case "delete":
-      await deleteEmails(args);
-      break;
-    case "modify":
-      await modifyEmails(args);
-      break;
-    default:
-      console.error(
-        `Usage: fastmail batch <read|unread|flag|unflag|move|delete|modify>\n\nSubcommands:\n  read     Mark emails as read\n  unread   Mark emails as unread\n  flag     Flag/star emails\n  unflag   Remove flag/star from emails\n  move     Move emails to a mailbox\n  delete   Delete emails (move to Trash or permanent)\n  modify   Generic email modification`,
-      );
-      process.exit(1);
-  }
-}
-
-async function handleUnsubscribe(
-  subcommand: string | null,
-  args: string[],
-): Promise<void> {
-  switch (subcommand) {
-    case "show":
-      await showUnsubscribe(args);
-      break;
-    case "execute":
-      await executeUnsubscribe(args);
-      break;
-    case "batch":
-      await batchUnsubscribe(args);
-      break;
-    default:
-      console.error(
-        `Usage: fastmail unsubscribe <show|execute|batch>\n\nSubcommands:\n  show     Show unsubscribe methods for an email\n  execute  Execute unsubscribe for an email\n  batch    Batch unsubscribe from newsletters`,
-      );
-      process.exit(1);
-  }
-}
-
-async function handleAttachment(
-  subcommand: string | null,
-  args: string[],
-): Promise<void> {
-  switch (subcommand) {
-    case "list":
-      await listAttachments(args);
-      break;
-    case "get":
-      await getAttachment(args);
-      break;
-    case "download":
-      await downloadAllAttachments(args);
-      break;
-    default:
-      console.error(
-        `Usage: fastmail attachment <list|get|download>\n\nSubcommands:\n  list      List attachments on an email\n  get       Download a specific attachment\n  download  Download all attachments from an email`,
-      );
-      process.exit(1);
-  }
-}
-
-async function handleThread(
-  subcommand: string | null,
-  args: string[],
-): Promise<void> {
-  switch (subcommand) {
-    case "get":
-      await getThread(args);
-      break;
-    case "modify":
-      await modifyThread(args);
-      break;
-    case "attachments":
-      await threadAttachments(args);
-      break;
-    default:
-      console.error(
-        `Usage: fastmail thread <get|modify|attachments>\n\nSubcommands:\n  get          Get a thread with all messages\n  modify       Modify labels/keywords on all emails in a thread\n  attachments  List all attachments in a thread`,
-      );
-      process.exit(1);
-  }
-}
-
-async function handleUrl(
-  subcommand: string | null,
-  args: string[],
-): Promise<void> {
-  await urlCommand(subcommand, args);
-}
-
-async function handleDraft(
-  subcommand: string | null,
-  args: string[],
-): Promise<void> {
-  switch (subcommand) {
-    case "list":
-      await listDrafts(args);
-      break;
-    case "get":
-      await getDraft(args);
-      break;
-    case "create":
-      await createDraft(args);
-      break;
-    case "update":
-      await updateDraft(args);
-      break;
-    case "delete":
-      await deleteDraft(args);
-      break;
-    case "send":
-      await sendDraft(args);
-      break;
-    default:
-      console.error(
-        `Usage: fastmail draft <list|get|create|update|delete|send>\n\nSubcommands:\n  list    List all drafts\n  get     Get draft by ID\n  create  Create a new draft\n  update  Update an existing draft\n  delete  Delete a draft\n  send    Send a draft`,
-      );
-      process.exit(1);
-  }
-}
-
-main().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});

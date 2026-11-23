@@ -3,11 +3,11 @@
  */
 
 import { getPositional, getString, parseArgs, wantsHelp } from "../args.ts";
-import { loadConfig } from "../config.ts";
-import { JmapClient } from "../jmap/client.ts";
+import { getClient } from "../client.ts";
+import { runtimeError, usageError } from "../error.ts";
 import { type EmailBodyPart, getEmails, setEmails } from "../jmap/email.ts";
 import { getThreads } from "../jmap/thread.ts";
-import { JMAP_MAIL_CAPABILITY } from "../jmap/types.ts";
+import { resolveMailboxId } from "../mailbox-resolver.ts";
 
 /** Common options for thread commands */
 const THREAD_OPTIONS = {
@@ -16,71 +16,14 @@ const THREAD_OPTIONS = {
   "remove-mailbox": { type: "string" as const },
   "add-keyword": { type: "string" as const },
   "remove-keyword": { type: "string" as const },
+  json: { type: "boolean" as const },
 };
-
-/**
- * Get authenticated JMAP client.
- */
-async function getClient(): Promise<JmapClient> {
-  const envToken = process.env.FASTMAIL_API_TOKEN;
-  const config = await loadConfig();
-  const token = envToken ?? config.apiToken;
-
-  if (!token) {
-    throw new Error(
-      "Not authenticated. Run 'fastmail auth login' or set FASTMAIL_API_TOKEN",
-    );
-  }
-
-  return new JmapClient({ token });
-}
-
-/**
- * Resolve mailbox name to ID.
- */
-async function resolveMailboxId(
-  client: JmapClient,
-  nameOrId: string,
-): Promise<string> {
-  // If it looks like an ID (contains special chars), use it directly
-  if (nameOrId.includes("~") || nameOrId.includes("/")) {
-    return nameOrId;
-  }
-
-  // Otherwise, query mailboxes to find by name
-  const accountId = await client.getPrimaryAccountId(JMAP_MAIL_CAPABILITY);
-  const response = await client.call<{
-    accountId: string;
-    state: string;
-    list: Array<{ id: string; name: string; role?: string }>;
-  }>([JMAP_MAIL_CAPABILITY], "Mailbox/get", {
-    accountId,
-  });
-
-  // Try exact name match first
-  let mailbox = response.list.find(
-    (mb) => mb.name.toLowerCase() === nameOrId.toLowerCase(),
-  );
-
-  // If no exact match, try role match (e.g., "inbox" -> role "inbox")
-  if (!mailbox) {
-    mailbox = response.list.find(
-      (mb) => mb.role?.toLowerCase() === nameOrId.toLowerCase(),
-    );
-  }
-
-  if (!mailbox) {
-    throw new Error(`Mailbox not found: ${nameOrId}`);
-  }
-
-  return mailbox.id;
-}
 
 /**
  * Get a thread with all its emails.
  */
 export async function getThread(args: string[]): Promise<void> {
-  const parsed = parseArgs(args, THREAD_OPTIONS);
+  const parsed = parseArgs(args, THREAD_OPTIONS, [1, 1]);
 
   if (wantsHelp(parsed)) {
     console.log(`
@@ -96,11 +39,10 @@ Options:
   }
 
   const threadId = getPositional(parsed, 0);
-  if (!threadId) {
-    console.error("Error: Thread ID required");
-    console.error("Usage: fastmail thread get <threadId>");
-    process.exit(1);
-  }
+  if (!threadId)
+    throw usageError(
+      "Thread ID required. Usage: fastmail thread get <threadId>",
+    );
 
   const client = await getClient();
   const bodyType = getString(parsed, "body-type") ?? "none";
@@ -108,15 +50,13 @@ Options:
   // 1. Get thread to get emailIds
   const threadResult = await getThreads(client, { ids: [threadId] });
 
-  if (threadResult.notFound.includes(threadId)) {
-    console.error(`Error: Thread not found: ${threadId}`);
-    process.exit(1);
-  }
-
   const thread = threadResult.list[0];
-  if (!thread || thread.emailIds.length === 0) {
-    console.error(`Error: Thread not found or empty: ${threadId}`);
-    process.exit(1);
+  if (
+    threadResult.notFound.includes(threadId) ||
+    !thread ||
+    thread.emailIds.length === 0
+  ) {
+    throw runtimeError(`Thread not found or empty: ${threadId}`);
   }
 
   // 2. Get all emails in the thread
@@ -179,7 +119,7 @@ Options:
  * Modify labels/keywords on all emails in a thread.
  */
 export async function modifyThread(args: string[]): Promise<void> {
-  const parsed = parseArgs(args, THREAD_OPTIONS);
+  const parsed = parseArgs(args, THREAD_OPTIONS, [1, 1]);
 
   if (wantsHelp(parsed)) {
     console.log(`
@@ -203,11 +143,10 @@ Examples:
   }
 
   const threadId = getPositional(parsed, 0);
-  if (!threadId) {
-    console.error("Error: Thread ID required");
-    console.error("Usage: fastmail thread modify <threadId> [options]");
-    process.exit(1);
-  }
+  if (!threadId)
+    throw usageError(
+      "Thread ID required. Usage: fastmail thread modify <threadId> [options]",
+    );
 
   const addMailbox = getString(parsed, "add-mailbox");
   const removeMailbox = getString(parsed, "remove-mailbox");
@@ -215,9 +154,7 @@ Examples:
   const removeKeyword = getString(parsed, "remove-keyword");
 
   if (!addMailbox && !removeMailbox && !addKeyword && !removeKeyword) {
-    console.error("Error: At least one modification option required");
-    console.error("Use --help for usage information");
-    process.exit(1);
+    throw usageError("At least one modification option required");
   }
 
   const client = await getClient();
@@ -225,15 +162,13 @@ Examples:
   // 1. Get thread to get emailIds
   const threadResult = await getThreads(client, { ids: [threadId] });
 
-  if (threadResult.notFound.includes(threadId)) {
-    console.error(`Error: Thread not found: ${threadId}`);
-    process.exit(1);
-  }
-
   const thread = threadResult.list[0];
-  if (!thread || thread.emailIds.length === 0) {
-    console.error(`Error: Thread not found or empty: ${threadId}`);
-    process.exit(1);
+  if (
+    threadResult.notFound.includes(threadId) ||
+    !thread ||
+    thread.emailIds.length === 0
+  ) {
+    throw runtimeError(`Thread not found or empty: ${threadId}`);
   }
 
   // 2. Resolve mailbox IDs if needed
@@ -284,16 +219,14 @@ Examples:
     }),
   );
 
-  if (failed > 0) {
-    process.exit(1);
-  }
+  if (failed > 0) throw runtimeError(`Failed to modify ${failed} emails`);
 }
 
 /**
  * List all attachments in a thread.
  */
 export async function threadAttachments(args: string[]): Promise<void> {
-  const parsed = parseArgs(args, THREAD_OPTIONS);
+  const parsed = parseArgs(args, THREAD_OPTIONS, [1, 1]);
 
   if (wantsHelp(parsed)) {
     console.log(`
@@ -308,26 +241,23 @@ Options:
   }
 
   const threadId = getPositional(parsed, 0);
-  if (!threadId) {
-    console.error("Error: Thread ID required");
-    console.error("Usage: fastmail thread attachments <threadId>");
-    process.exit(1);
-  }
+  if (!threadId)
+    throw usageError(
+      "Thread ID required. Usage: fastmail thread attachments <threadId>",
+    );
 
   const client = await getClient();
 
   // 1. Get thread to get emailIds
   const threadResult = await getThreads(client, { ids: [threadId] });
 
-  if (threadResult.notFound.includes(threadId)) {
-    console.error(`Error: Thread not found: ${threadId}`);
-    process.exit(1);
-  }
-
   const thread = threadResult.list[0];
-  if (!thread || thread.emailIds.length === 0) {
-    console.error(`Error: Thread not found or empty: ${threadId}`);
-    process.exit(1);
+  if (
+    threadResult.notFound.includes(threadId) ||
+    !thread ||
+    thread.emailIds.length === 0
+  ) {
+    throw runtimeError(`Thread not found or empty: ${threadId}`);
   }
 
   // 2. Get emails with attachment info

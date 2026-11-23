@@ -10,12 +10,13 @@ A CLI for FastMail built on the JMAP protocol.
 ## Setup
 
 ```sh
-fastmail auth login
+fastmail auth login --token-file /path/to/token
+fastmail auth login --token-file - < /path/to/token
 ```
 
-Provide an API token from FastMail Settings > Privacy & Security > API tokens. The token can be passed via `--token`, piped through stdin, or entered interactively.
+Provide an API token from FastMail Settings > Privacy & Security > API tokens. Interactive login is available on a TTY. `--token` and `FASTMAIL_API_TOKEN` are deprecated.
 
-Token resolution order: `FASTMAIL_API_TOKEN` env var, then `~/.config/fastmail-cli/config.json`.
+Tokens are read from `~/.config/fastmail-cli/config.json`.
 
 ## Commands
 
@@ -23,7 +24,7 @@ Token resolution order: `FASTMAIL_API_TOKEN` env var, then `~/.config/fastmail-c
 fastmail <command> [subcommand] [flags]
 ```
 
-All commands support `--help` and `--json` flags.
+All commands support `--help`. Structured commands support `--json`; URL commands print plain-text URLs. Stdout contains data, while progress and confirmations use stderr. Usage errors exit 2 and runtime failures exit 1.
 
 | Command      | Subcommands                                         | Description                |
 |--------------|-----------------------------------------------------|----------------------------|
@@ -37,6 +38,8 @@ All commands support `--help` and `--json` flags.
 | `thread`     | `get`, `modify`, `attachments`                      | Thread operations          |
 | `url`        | `email`, `mailbox`, `search`, `compose`             | Generate FastMail web URLs |
 | `unsubscribe`| `show`, `execute`, `batch`                          | Newsletter unsubscribe     |
+| `completion` | `bash`, `zsh`, `fish`                                | Shell completion           |
+| `skill`      | `path`                                               | Locate these instructions  |
 
 ## Common workflows
 
@@ -84,11 +87,11 @@ Each command's full options and examples are documented in the references direct
 
 ```sh
 # bash
-source <(fastmail --completion bash)
+source <(fastmail completion bash)
 
 # zsh
-source <(fastmail --completion zsh)
+source <(fastmail completion zsh)
 
 # fish
-fastmail --completion fish | source
+fastmail completion fish | source
 ```

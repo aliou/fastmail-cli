@@ -11,9 +11,10 @@ import {
   parseArgs,
   wantsHelp,
 } from "../args.ts";
-import { loadConfig } from "../config.ts";
+import { getClient } from "../client.ts";
+import { runtimeError, usageError } from "../error.ts";
 import { uploadBlob } from "../jmap/blob.ts";
-import { JmapClient } from "../jmap/client.ts";
+import type { JmapClient } from "../jmap/client.ts";
 import {
   type Email,
   type EmailAddress,
@@ -29,6 +30,7 @@ import {
   JMAP_MAIL_CAPABILITY,
   JMAP_SUBMISSION_CAPABILITY,
 } from "../jmap/types.ts";
+import { resolveMailboxId } from "../mailbox-resolver.ts";
 
 /** Common options for email commands */
 const EMAIL_OPTIONS = {
@@ -50,6 +52,7 @@ const EMAIL_OPTIONS = {
   attach: { type: "string" as const, multiple: true },
   "reply-to": { type: "string" as const },
   "reply-all": { type: "boolean" as const },
+  json: { type: "boolean" as const },
 };
 
 /**
@@ -143,23 +146,6 @@ export async function getReplyContext(
 }
 
 /**
- * Get authenticated JMAP client.
- */
-async function getClient(): Promise<JmapClient> {
-  const envToken = process.env.FASTMAIL_API_TOKEN;
-  const config = await loadConfig();
-  const token = envToken ?? config.apiToken;
-
-  if (!token) {
-    throw new Error(
-      "Not authenticated. Run 'fastmail auth login' or set FASTMAIL_API_TOKEN",
-    );
-  }
-
-  return new JmapClient({ token });
-}
-
-/**
  * Parse date string to ISO 8601 format.
  * Accepts:
  * - ISO 8601: "2026-01-11T00:00:00Z"
@@ -208,48 +194,6 @@ export function parseDate(input: string): string {
 }
 
 /**
- * Resolve mailbox name to ID.
- * For now, this is a simple implementation - in practice would use Mailbox/get.
- */
-async function resolveMailboxId(
-  client: JmapClient,
-  nameOrId: string,
-): Promise<string> {
-  const accountId = await client.getPrimaryAccountId(JMAP_MAIL_CAPABILITY);
-  const response = await client.call<{
-    accountId: string;
-    state: string;
-    list: Array<{ id: string; name: string; role?: string }>;
-  }>([JMAP_MAIL_CAPABILITY], "Mailbox/get", {
-    accountId,
-  });
-
-  // Try exact ID match first, allowing unambiguous retrieval by ID.
-  const byId = response.list.find((mb) => mb.id === nameOrId);
-  if (byId) {
-    return byId.id;
-  }
-
-  // Try exact name match.
-  let mailbox = response.list.find(
-    (mb) => mb.name.toLowerCase() === nameOrId.toLowerCase(),
-  );
-
-  // If no exact match, try role match (e.g., "inbox" -> role "inbox").
-  if (!mailbox) {
-    mailbox = response.list.find(
-      (mb) => mb.role?.toLowerCase() === nameOrId.toLowerCase(),
-    );
-  }
-
-  if (!mailbox) {
-    throw new Error(`Mailbox not found: ${nameOrId}`);
-  }
-
-  return mailbox.id;
-}
-
-/**
  * Format email for display.
  */
 function formatEmail(email: Email, full = false): Record<string, unknown> {
@@ -285,11 +229,15 @@ function formatEmail(email: Email, full = false): Record<string, unknown> {
  * List emails from a mailbox.
  */
 export async function listEmails(args: string[]): Promise<void> {
-  const parsed = parseArgs(args, {
-    ...EMAIL_OPTIONS,
-    unread: { type: "boolean" as const },
-    flagged: { type: "boolean" as const },
-  });
+  const parsed = parseArgs(
+    args,
+    {
+      ...EMAIL_OPTIONS,
+      unread: { type: "boolean" as const },
+      flagged: { type: "boolean" as const },
+    },
+    [0, 0],
+  );
 
   if (wantsHelp(parsed)) {
     console.log(`
@@ -314,10 +262,10 @@ Examples:
     return;
   }
 
+  const limit = getNumber(parsed, "limit") ?? 20;
   const client = await getClient();
 
   const mailboxName = getString(parsed, "mailbox") ?? "Inbox";
-  const limit = getNumber(parsed, "limit") ?? 20;
 
   // Build filter
   const filter: EmailFilter = {};
@@ -380,10 +328,14 @@ Examples:
  * Get full email by ID.
  */
 export async function getEmail(args: string[]): Promise<void> {
-  const parsed = parseArgs(args, {
-    ...EMAIL_OPTIONS,
-    raw: { type: "boolean" as const },
-  });
+  const parsed = parseArgs(
+    args,
+    {
+      ...EMAIL_OPTIONS,
+      raw: { type: "boolean" as const },
+    },
+    [1, 1],
+  );
 
   if (wantsHelp(parsed)) {
     console.log(`
@@ -400,11 +352,8 @@ Options:
   }
 
   const emailId = getPositional(parsed, 0);
-  if (!emailId) {
-    console.error("Error: Email ID required");
-    console.error("Usage: fastmail email get <id>");
-    process.exit(1);
-  }
+  if (!emailId)
+    throw usageError("Email ID required. Usage: fastmail email get <id>");
 
   const client = await getClient();
   const bodyType = getString(parsed, "body-type") ?? "text";
@@ -435,22 +384,13 @@ Options:
     fetchHTMLBodyValues: bodyType === "html",
   });
 
-  if (getResult.notFound.includes(emailId)) {
-    console.error(`Error: Email not found: ${emailId}`);
-    process.exit(1);
+  if (getResult.notFound.includes(emailId) || !getResult.list[0]) {
+    throw runtimeError(`Email not found: ${emailId}`);
   }
 
   const email = getResult.list[0];
-  if (!email) {
-    console.error(`Error: Email not found: ${emailId}`);
-    process.exit(1);
-  }
 
-  if (getBoolean(parsed, "raw")) {
-    // TODO: Fetch raw message via download URL
-    console.error("Error: --raw not yet implemented");
-    process.exit(1);
-  }
+  if (getBoolean(parsed, "raw")) throw runtimeError("--raw is not implemented");
 
   console.log(JSON.stringify(formatEmail(email, true), null, 2));
 }
@@ -508,7 +448,7 @@ export function parseSearchQuery(query: string): EmailFilterCondition {
  * Search emails.
  */
 export async function searchEmails(args: string[]): Promise<void> {
-  const parsed = parseArgs(args, EMAIL_OPTIONS);
+  const parsed = parseArgs(args, EMAIL_OPTIONS, [1, 1]);
 
   if (wantsHelp(parsed)) {
     console.log(`
@@ -541,14 +481,13 @@ Examples:
   }
 
   const query = getPositional(parsed, 0);
-  if (!query) {
-    console.error("Error: Search query required");
-    console.error("Usage: fastmail email search <query>");
-    process.exit(1);
-  }
+  if (!query)
+    throw usageError(
+      "Search query required. Usage: fastmail email search <query>",
+    );
 
-  const client = await getClient();
   const limit = getNumber(parsed, "limit") ?? 20;
+  const client = await getClient();
 
   // Build filter
   const filter: EmailFilter = parseSearchQuery(query);
@@ -604,10 +543,14 @@ Examples:
  * Send an email.
  */
 export async function sendEmail(args: string[]): Promise<void> {
-  const parsed = parseArgs(args, {
-    ...EMAIL_OPTIONS,
-    "body-file": { type: "string" as const },
-  });
+  const parsed = parseArgs(
+    args,
+    {
+      ...EMAIL_OPTIONS,
+      "body-file": { type: "string" as const },
+    },
+    [0, 0],
+  );
 
   if (wantsHelp(parsed)) {
     console.log(`
@@ -647,24 +590,17 @@ Examples:
   const subject = getString(parsed, "subject");
 
   // Validate --reply-all requires --reply-to
-  if (replyAll && !replyTo) {
-    console.error("Error: --reply-all requires --reply-to");
-    process.exit(1);
-  }
+  if (replyAll && !replyTo) throw usageError("--reply-all requires --reply-to");
 
   // Validate required fields (--to not required if --reply-to with --reply-all)
   const hasReplyAllContext = replyTo && replyAll;
   if (!to && !hasReplyAllContext) {
-    console.error(
-      "Error: --to is required (or use --reply-to with --reply-all)",
-    );
-    process.exit(1);
+    throw usageError("--to is required (or use --reply-to with --reply-all)");
   }
 
   // Subject not required if replying (will use Re: original subject)
   if (!subject && !replyTo) {
-    console.error("Error: --subject is required (or use --reply-to)");
-    process.exit(1);
+    throw usageError("--subject is required (or use --reply-to)");
   }
 
   // Get body content
@@ -684,8 +620,7 @@ Examples:
       if (bodyText) {
         body = bodyText;
       } else {
-        console.error("Error: --body, --body-file, or --stdin required");
-        process.exit(1);
+        throw usageError("--body, --body-file, or --stdin required");
       }
     }
   }
@@ -699,16 +634,10 @@ Examples:
   }>([JMAP_MAIL_CAPABILITY], "Mailbox/get", { accountId });
 
   const draftsMailbox = mailboxResponse.list.find((mb) => mb.role === "drafts");
-  if (!draftsMailbox) {
-    console.error("Error: Drafts mailbox not found");
-    process.exit(1);
-  }
+  if (!draftsMailbox) throw runtimeError("Drafts mailbox not found");
 
   const sentMailbox = mailboxResponse.list.find((mb) => mb.role === "sent");
-  if (!sentMailbox) {
-    console.error("Error: Sent mailbox not found");
-    process.exit(1);
-  }
+  if (!sentMailbox) throw runtimeError("Sent mailbox not found");
 
   // Get identity (for now, use first available)
   // Identity/get requires the submission capability
@@ -718,16 +647,8 @@ Examples:
     accountId,
   });
 
-  if (identityResponse.list.length === 0) {
-    console.error("Error: No identities found");
-    process.exit(1);
-  }
-
   const identity = identityResponse.list[0];
-  if (!identity) {
-    console.error("Error: No identities found");
-    process.exit(1);
-  }
+  if (!identity) throw runtimeError("No identities found");
 
   // Get reply context if replying
   let replyContext: ReplyContext | null = null;
@@ -745,8 +666,7 @@ Examples:
       replyContext.to.length === 0 &&
       replyContext.cc.length === 0
     ) {
-      console.error("Error: No recipients for reply");
-      process.exit(1);
+      throw runtimeError("No recipients for reply");
     }
   }
 
@@ -793,10 +713,8 @@ Examples:
       const trimmed = filePath.trim();
       const file = Bun.file(trimmed);
 
-      if (!(await file.exists())) {
-        console.error(`Error: File not found: ${trimmed}`);
-        process.exit(1);
-      }
+      if (!(await file.exists()))
+        throw runtimeError(`File not found: ${trimmed}`);
 
       const data = await file.arrayBuffer();
       const type = file.type || "application/octet-stream";
@@ -854,10 +772,9 @@ Examples:
   const createdEmail = emailSet.created?.draft;
   if (!createdEmail) {
     const error = emailSet.notCreated?.draft;
-    console.error(
+    throw runtimeError(
       `Error creating email: ${error?.type ?? "unknown"} - ${error?.description ?? "Unknown error"}`,
     );
-    process.exit(1);
   }
 
   // Submit for sending
@@ -880,13 +797,20 @@ Examples:
   const created = submissionSet.created?.send;
   if (!created) {
     const error = submissionSet.notCreated?.send;
-    console.error(
+    throw runtimeError(
       `Error sending email: ${error?.description ?? "Unknown error"}`,
     );
-    process.exit(1);
   }
 
-  console.log("Email sent successfully");
+  if (getBoolean(parsed, "json")) {
+    console.log(
+      JSON.stringify({ id: createdEmail.id, status: "sent" }, null, 2),
+    );
+  } else {
+    console.error(
+      `Email sent successfully. Get it with 'fastmail email get ${createdEmail.id}'.`,
+    );
+  }
 }
 
 /**
@@ -896,7 +820,7 @@ export async function markRead(args: string[]): Promise<void> {
   const parsed = parseArgs(args, EMAIL_OPTIONS);
   const ids = parsed.positionals;
 
-  if (wantsHelp(parsed) || ids.length === 0) {
+  if (wantsHelp(parsed)) {
     console.log(`
 Usage: fastmail email mark-read <id>...
 
@@ -909,11 +833,9 @@ Examples:
   fastmail email mark-read EMAIL_ID
   fastmail email mark-read ID1 ID2 ID3
 `);
-    if (ids.length === 0) {
-      process.exit(1);
-    }
     return;
   }
+  if (ids.length === 0) throw usageError("At least one email ID is required");
 
   const client = await getClient();
 
@@ -937,9 +859,7 @@ Examples:
     }),
   );
 
-  if (failed > 0) {
-    process.exit(1);
-  }
+  if (failed > 0) throw runtimeError(`Failed to update ${failed} emails`);
 }
 
 /**
@@ -949,7 +869,7 @@ export async function markUnread(args: string[]): Promise<void> {
   const parsed = parseArgs(args, EMAIL_OPTIONS);
   const ids = parsed.positionals;
 
-  if (wantsHelp(parsed) || ids.length === 0) {
+  if (wantsHelp(parsed)) {
     console.log(`
 Usage: fastmail email mark-unread <id>...
 
@@ -962,11 +882,9 @@ Examples:
   fastmail email mark-unread EMAIL_ID
   fastmail email mark-unread ID1 ID2 ID3
 `);
-    if (ids.length === 0) {
-      process.exit(1);
-    }
     return;
   }
+  if (ids.length === 0) throw usageError("At least one email ID is required");
 
   const client = await getClient();
 
@@ -990,7 +908,5 @@ Examples:
     }),
   );
 
-  if (failed > 0) {
-    process.exit(1);
-  }
+  if (failed > 0) throw runtimeError(`Failed to update ${failed} emails`);
 }

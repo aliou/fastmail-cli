@@ -1,99 +1,92 @@
-/**
- * Shared argument parsing utilities using Bun's parseArgs.
- */
-
 import { parseArgs as bunParseArgs } from "node:util";
+import { usageError } from "./error.ts";
 
 export type ParsedArgs = {
   values: Record<string, string | boolean | string[] | undefined>;
   positionals: string[];
 };
 
-/**
- * Parse command-line arguments using Bun's parseArgs utility.
- *
- * Supports:
- * - Boolean flags: --flag, -f
- * - String options: --key value, --key=value
- * - Positional arguments
- *
- * All unknown flags are allowed (strict: false).
- */
+type Options = Record<
+  string,
+  { type: "string" | "boolean"; short?: string; multiple?: boolean }
+>;
+
+export function hasHelp(args: string[]): boolean {
+  return args.includes("--help") || args.includes("-h");
+}
+
 export function parseArgs(
   args: string[],
-  options?: Record<
-    string,
-    { type: "string" | "boolean"; short?: string; multiple?: boolean }
-  >,
+  options: Options = {},
+  arity: [min: number, max: number | null] = [0, null],
 ): ParsedArgs {
-  // Default options that are common across commands
-  const defaultOptions = {
-    help: { type: "boolean" as const, short: "h" },
-  };
-
-  const mergedOptions = { ...defaultOptions, ...options };
+  if (hasHelp(args)) {
+    return { values: { help: true }, positionals: [] };
+  }
 
   try {
     const result = bunParseArgs({
       args,
-      options: mergedOptions,
-      strict: false,
+      options: {
+        help: { type: "boolean", short: "h" },
+        ...options,
+      },
+      strict: true,
       allowPositionals: true,
     });
-
+    const [min, max] = arity;
+    const count = result.positionals.length;
+    if (count < min || (max !== null && count > max)) {
+      const expected =
+        max === null
+          ? `at least ${min}`
+          : min === max
+            ? `${min}`
+            : `${min}-${max}`;
+      throw usageError(
+        `Expected ${expected} positional arguments; received ${count}`,
+      );
+    }
     return {
-      values: result.values as Record<
-        string,
-        string | boolean | string[] | undefined
-      >,
+      values: result.values as ParsedArgs["values"],
       positionals: result.positionals,
     };
-  } catch {
-    // Fallback for edge cases - return empty result
-    return {
-      values: { help: false },
-      positionals: args.filter((a) => !a.startsWith("-")),
-    };
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Invalid arguments";
+    const concise =
+      message
+        .replace(/^ERR_PARSE_ARGS_[A-Z_]+: /, "")
+        .split(". To specify")[0] ?? message;
+    throw usageError(concise);
   }
 }
 
-/**
- * Check if help flag is set.
- */
 export function wantsHelp(parsed: ParsedArgs): boolean {
-  return Boolean(parsed.values.help || parsed.values.h);
+  return Boolean(parsed.values.help);
 }
 
-/**
- * Get a string value from parsed args.
- */
 export function getString(parsed: ParsedArgs, key: string): string | undefined {
   const value = parsed.values[key];
   return typeof value === "string" ? value : undefined;
 }
 
-/**
- * Get a boolean value from parsed args.
- */
 export function getBoolean(parsed: ParsedArgs, key: string): boolean {
   return Boolean(parsed.values[key]);
 }
 
-/**
- * Get a number value from parsed args.
- */
 export function getNumber(parsed: ParsedArgs, key: string): number | undefined {
-  const value = parsed.values[key];
-  if (typeof value === "string") {
-    const num = Number.parseInt(value, 10);
-    return Number.isNaN(num) ? undefined : num;
+  const value = getString(parsed, key);
+  if (value === undefined) return undefined;
+  const number = Number(value);
+  if (!Number.isInteger(number) || number < 0) {
+    throw usageError(
+      `Option '--${key} <value>' must be a non-negative integer`,
+    );
   }
-  return undefined;
+  return number;
 }
 
-/**
- * Get positional argument by index.
- */
 export function getPositional(
   parsed: ParsedArgs,
   index: number,

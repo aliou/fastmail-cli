@@ -15,4 +15,6 @@ for (const { target, outfile } of targets) {
   console.log(`Built ${outfile}`);
 }
 
+await $`tar -czf dist/fastmail-share.tar.gz share`;
+
 console.log("Build complete!");

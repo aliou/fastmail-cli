@@ -3,36 +3,26 @@
  */
 
 import { existsSync, mkdirSync } from "node:fs";
-import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { getPositional, getString, parseArgs, wantsHelp } from "../args.ts";
-import { loadConfig } from "../config.ts";
+import {
+  getBoolean,
+  getPositional,
+  getString,
+  parseArgs,
+  wantsHelp,
+} from "../args.ts";
+import { getClient } from "../client.ts";
+import { runtimeError, usageError } from "../error.ts";
+import { atomicWriteFile } from "../files.ts";
 import { downloadBlob } from "../jmap/blob.ts";
-import { JmapClient } from "../jmap/client.ts";
 import { type EmailBodyPart, getEmails } from "../jmap/email.ts";
 
 /** Common options for attachment commands */
 const ATTACHMENT_OPTIONS = {
   output: { type: "string" as const, short: "o" },
   dir: { type: "string" as const, short: "d" },
+  json: { type: "boolean" as const },
 };
-
-/**
- * Get authenticated JMAP client.
- */
-async function getClient(): Promise<JmapClient> {
-  const envToken = process.env.FASTMAIL_API_TOKEN;
-  const config = await loadConfig();
-  const token = envToken ?? config.apiToken;
-
-  if (!token) {
-    throw new Error(
-      "Not authenticated. Run 'fastmail auth login' or set FASTMAIL_API_TOKEN",
-    );
-  }
-
-  return new JmapClient({ token });
-}
 
 /**
  * Format attachment info for output.
@@ -52,7 +42,7 @@ function formatAttachment(
  * List attachments on an email.
  */
 export async function listAttachments(args: string[]): Promise<void> {
-  const parsed = parseArgs(args, ATTACHMENT_OPTIONS);
+  const parsed = parseArgs(args, ATTACHMENT_OPTIONS, [1, 1]);
 
   if (wantsHelp(parsed)) {
     console.log(`
@@ -67,11 +57,10 @@ Options:
   }
 
   const emailId = getPositional(parsed, 0);
-  if (!emailId) {
-    console.error("Error: Email ID required");
-    console.error("Usage: fastmail attachment list <emailId>");
-    process.exit(1);
-  }
+  if (!emailId)
+    throw usageError(
+      "Email ID required. Usage: fastmail attachment list <emailId>",
+    );
 
   const client = await getClient();
 
@@ -80,17 +69,11 @@ Options:
     properties: ["id", "attachments"],
   });
 
-  if (result.notFound.includes(emailId)) {
-    console.error(`Error: Email not found: ${emailId}`);
-    process.exit(1);
+  if (result.notFound.includes(emailId) || !result.list[0]) {
+    throw runtimeError(`Email not found: ${emailId}`);
   }
 
   const email = result.list[0];
-  if (!email) {
-    console.error(`Error: Email not found: ${emailId}`);
-    process.exit(1);
-  }
-
   const attachments = email.attachments ?? [];
   const formatted = attachments.map(formatAttachment);
 
@@ -101,7 +84,7 @@ Options:
  * Download a specific attachment.
  */
 export async function getAttachment(args: string[]): Promise<void> {
-  const parsed = parseArgs(args, ATTACHMENT_OPTIONS);
+  const parsed = parseArgs(args, ATTACHMENT_OPTIONS, [2, 2]);
 
   if (wantsHelp(parsed)) {
     console.log(`
@@ -120,9 +103,9 @@ Options:
   const blobId = getPositional(parsed, 1);
 
   if (!emailId || !blobId) {
-    console.error("Error: Email ID and Blob ID required");
-    console.error("Usage: fastmail attachment get <emailId> <blobId>");
-    process.exit(1);
+    throw usageError(
+      "Email ID and Blob ID required. Usage: fastmail attachment get <emailId> <blobId>",
+    );
   }
 
   const client = await getClient();
@@ -133,23 +116,15 @@ Options:
     properties: ["id", "attachments"],
   });
 
-  if (result.notFound.includes(emailId)) {
-    console.error(`Error: Email not found: ${emailId}`);
-    process.exit(1);
+  if (result.notFound.includes(emailId) || !result.list[0]) {
+    throw runtimeError(`Email not found: ${emailId}`);
   }
 
   const email = result.list[0];
-  if (!email) {
-    console.error(`Error: Email not found: ${emailId}`);
-    process.exit(1);
-  }
 
   // Find the attachment by blobId
   const attachment = (email.attachments ?? []).find((a) => a.blobId === blobId);
-  if (!attachment) {
-    console.error(`Error: Attachment not found: ${blobId}`);
-    process.exit(1);
-  }
+  if (!attachment) throw runtimeError(`Attachment not found: ${blobId}`);
 
   // Download the blob
   const blob = await downloadBlob(
@@ -164,16 +139,22 @@ Options:
   const outputPath = getString(parsed, "output") ?? filename;
 
   // Write to file
-  await writeFile(outputPath, Buffer.from(blob.data));
+  await atomicWriteFile(outputPath, Buffer.from(blob.data));
 
-  console.log(`Downloaded: ${outputPath} (${blob.data.byteLength} bytes)`);
+  if (getBoolean(parsed, "json")) {
+    console.log(
+      JSON.stringify({ path: outputPath, size: blob.data.byteLength }, null, 2),
+    );
+  } else {
+    console.error(`Downloaded: ${outputPath} (${blob.data.byteLength} bytes)`);
+  }
 }
 
 /**
  * Download all attachments from an email.
  */
 export async function downloadAllAttachments(args: string[]): Promise<void> {
-  const parsed = parseArgs(args, ATTACHMENT_OPTIONS);
+  const parsed = parseArgs(args, ATTACHMENT_OPTIONS, [1, 1]);
 
   if (wantsHelp(parsed)) {
     console.log(`
@@ -189,11 +170,12 @@ Options:
   }
 
   const emailId = getPositional(parsed, 0);
-  if (!emailId) {
-    console.error("Error: Email ID required");
-    console.error("Usage: fastmail attachment download <emailId>");
-    process.exit(1);
-  }
+  if (!emailId)
+    throw usageError(
+      "Email ID required. Usage: fastmail attachment download <emailId>",
+    );
+  if (args.includes("-d"))
+    console.error("fastmail: -d is deprecated; use --dir instead");
 
   const client = await getClient();
 
@@ -203,20 +185,21 @@ Options:
     properties: ["id", "attachments"],
   });
 
-  if (result.notFound.includes(emailId)) {
-    console.error(`Error: Email not found: ${emailId}`);
-    process.exit(1);
+  if (result.notFound.includes(emailId) || !result.list[0]) {
+    throw runtimeError(`Email not found: ${emailId}`);
   }
 
   const email = result.list[0];
-  if (!email) {
-    console.error(`Error: Email not found: ${emailId}`);
-    process.exit(1);
-  }
-
   const attachments = email.attachments ?? [];
   if (attachments.length === 0) {
-    console.log("No attachments found");
+    if (getBoolean(parsed, "json"))
+      console.log(
+        JSON.stringify({
+          directory: getString(parsed, "dir") ?? ".",
+          files: [],
+        }),
+      );
+    else console.error("No attachments found");
     return;
   }
 
@@ -246,7 +229,7 @@ Options:
     // Use original attachment name from email metadata (not URL-encoded)
     const filename = attachment.name ?? blob.name;
     const outputPath = join(outputDir, filename);
-    await writeFile(outputPath, Buffer.from(blob.data));
+    await atomicWriteFile(outputPath, Buffer.from(blob.data));
 
     downloaded.push({
       name: filename,
@@ -254,8 +237,15 @@ Options:
     });
   }
 
-  console.log(`Downloaded ${downloaded.length} attachments to ${outputDir}/`);
-  for (const file of downloaded) {
-    console.log(`  - ${file.name} (${file.size} bytes)`);
+  if (getBoolean(parsed, "json")) {
+    console.log(
+      JSON.stringify({ directory: outputDir, files: downloaded }, null, 2),
+    );
+  } else {
+    console.error(
+      `Downloaded ${downloaded.length} attachments to ${outputDir}/`,
+    );
+    for (const file of downloaded)
+      console.error(`  - ${file.name} (${file.size} bytes)`);
   }
 }

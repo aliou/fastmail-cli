@@ -10,8 +10,9 @@ import {
   parseArgs,
   wantsHelp,
 } from "../args.ts";
-import { loadConfig } from "../config.ts";
-import { JmapClient } from "../jmap/client.ts";
+import { getClient } from "../client.ts";
+import { runtimeError, usageError } from "../error.ts";
+import type { JmapClient } from "../jmap/client.ts";
 import {
   type Email,
   type EmailAddress,
@@ -37,24 +38,8 @@ const DRAFT_OPTIONS = {
   "body-file": { type: "string" as const },
   stdin: { type: "boolean" as const },
   html: { type: "boolean" as const },
+  json: { type: "boolean" as const },
 };
-
-/**
- * Get authenticated JMAP client.
- */
-async function getClient(): Promise<JmapClient> {
-  const envToken = process.env.FASTMAIL_API_TOKEN;
-  const config = await loadConfig();
-  const token = envToken ?? config.apiToken;
-
-  if (!token) {
-    throw new Error(
-      "Not authenticated. Run 'fastmail auth login' or set FASTMAIL_API_TOKEN",
-    );
-  }
-
-  return new JmapClient({ token });
-}
 
 /**
  * Parse email addresses from comma-separated string.
@@ -139,7 +124,7 @@ function formatDraft(email: Email, full = false): Record<string, unknown> {
  * List drafts.
  */
 export async function listDrafts(args: string[]): Promise<void> {
-  const parsed = parseArgs(args, DRAFT_OPTIONS);
+  const parsed = parseArgs(args, DRAFT_OPTIONS, [0, 0]);
 
   if (wantsHelp(parsed)) {
     console.log(`
@@ -154,8 +139,8 @@ Options:
     return;
   }
 
-  const client = await getClient();
   const limit = getNumber(parsed, "limit") ?? 20;
+  const client = await getClient();
 
   // Get drafts mailbox ID
   const draftsMailboxId = await getDraftsMailboxId(client);
@@ -189,7 +174,7 @@ Options:
  * Get draft by ID.
  */
 export async function getDraft(args: string[]): Promise<void> {
-  const parsed = parseArgs(args, DRAFT_OPTIONS);
+  const parsed = parseArgs(args, DRAFT_OPTIONS, [1, 1]);
 
   if (wantsHelp(parsed)) {
     console.log(`
@@ -205,11 +190,8 @@ Options:
   }
 
   const draftId = getPositional(parsed, 0);
-  if (!draftId) {
-    console.error("Error: Draft ID required");
-    console.error("Usage: fastmail draft get <id>");
-    process.exit(1);
-  }
+  if (!draftId)
+    throw usageError("Draft ID required. Usage: fastmail draft get <id>");
 
   const client = await getClient();
   const bodyType = getString(parsed, "body-type") ?? "text";
@@ -236,16 +218,11 @@ Options:
     fetchHTMLBodyValues: bodyType === "html",
   });
 
-  if (getResult.notFound.includes(draftId)) {
-    console.error(`Error: Draft not found: ${draftId}`);
-    process.exit(1);
+  if (getResult.notFound.includes(draftId) || !getResult.list[0]) {
+    throw runtimeError(`Draft not found: ${draftId}`);
   }
 
   const email = getResult.list[0];
-  if (!email) {
-    console.error(`Error: Draft not found: ${draftId}`);
-    process.exit(1);
-  }
 
   console.log(JSON.stringify(formatDraft(email, true), null, 2));
 }
@@ -254,7 +231,7 @@ Options:
  * Create a new draft.
  */
 export async function createDraft(args: string[]): Promise<void> {
-  const parsed = parseArgs(args, DRAFT_OPTIONS);
+  const parsed = parseArgs(args, DRAFT_OPTIONS, [0, 0]);
 
   if (wantsHelp(parsed)) {
     console.log(`
@@ -342,10 +319,9 @@ Examples:
   const created = result.created?.draft;
   if (!created) {
     const error = result.notCreated?.draft;
-    console.error(
+    throw runtimeError(
       `Error creating draft: ${error?.description ?? "Unknown error"}`,
     );
-    process.exit(1);
   }
 
   console.log(
@@ -364,7 +340,7 @@ Examples:
  * Delete a draft.
  */
 export async function deleteDraft(args: string[]): Promise<void> {
-  const parsed = parseArgs(args, DRAFT_OPTIONS);
+  const parsed = parseArgs(args, DRAFT_OPTIONS, [1, 1]);
 
   if (wantsHelp(parsed)) {
     console.log(`
@@ -379,11 +355,8 @@ Options:
   }
 
   const draftId = getPositional(parsed, 0);
-  if (!draftId) {
-    console.error("Error: Draft ID required");
-    console.error("Usage: fastmail draft delete <id>");
-    process.exit(1);
-  }
+  if (!draftId)
+    throw usageError("Draft ID required. Usage: fastmail draft delete <id>");
 
   const client = await getClient();
 
@@ -393,20 +366,21 @@ Options:
 
   if (result.notDestroyed?.[draftId]) {
     const error = result.notDestroyed[draftId];
-    console.error(
+    throw runtimeError(
       `Error deleting draft: ${error?.description ?? "Unknown error"}`,
     );
-    process.exit(1);
   }
 
-  console.log(`Draft deleted: ${draftId}`);
+  if (getBoolean(parsed, "json"))
+    console.log(JSON.stringify({ id: draftId, deleted: true }));
+  else console.error(`Draft deleted: ${draftId}`);
 }
 
 /**
  * Send a draft.
  */
 export async function sendDraft(args: string[]): Promise<void> {
-  const parsed = parseArgs(args, DRAFT_OPTIONS);
+  const parsed = parseArgs(args, DRAFT_OPTIONS, [1, 1]);
 
   if (wantsHelp(parsed)) {
     console.log(`
@@ -421,11 +395,8 @@ Options:
   }
 
   const draftId = getPositional(parsed, 0);
-  if (!draftId) {
-    console.error("Error: Draft ID required");
-    console.error("Usage: fastmail draft send <id>");
-    process.exit(1);
-  }
+  if (!draftId)
+    throw usageError("Draft ID required. Usage: fastmail draft send <id>");
 
   const client = await getClient();
 
@@ -435,16 +406,11 @@ Options:
     properties: ["id", "to", "cc", "bcc"],
   });
 
-  if (getResult.notFound.includes(draftId)) {
-    console.error(`Error: Draft not found: ${draftId}`);
-    process.exit(1);
+  if (getResult.notFound.includes(draftId) || !getResult.list[0]) {
+    throw runtimeError(`Draft not found: ${draftId}`);
   }
 
   const draft = getResult.list[0];
-  if (!draft) {
-    console.error(`Error: Draft not found: ${draftId}`);
-    process.exit(1);
-  }
 
   // Check for recipients
   const hasRecipients =
@@ -452,10 +418,7 @@ Options:
     (draft.cc && draft.cc.length > 0) ||
     (draft.bcc && draft.bcc.length > 0);
 
-  if (!hasRecipients) {
-    console.error("Error: Draft has no recipients");
-    process.exit(1);
-  }
+  if (!hasRecipients) throw runtimeError("Draft has no recipients");
 
   // Get identity for sending
   const identity = await getIdentity(client);
@@ -475,13 +438,14 @@ Options:
   const created = result.created?.send;
   if (!created) {
     const error = result.notCreated?.send;
-    console.error(
+    throw runtimeError(
       `Error sending draft: ${error?.description ?? "Unknown error"}`,
     );
-    process.exit(1);
   }
 
-  console.log("Draft sent successfully");
+  if (getBoolean(parsed, "json"))
+    console.log(JSON.stringify({ id: draftId, status: "sent" }));
+  else console.error("Draft sent successfully");
 }
 
 /**
@@ -490,7 +454,7 @@ Options:
  * To "update" a draft, we must destroy the old one and create a new one.
  */
 export async function updateDraft(args: string[]): Promise<void> {
-  const parsed = parseArgs(args, DRAFT_OPTIONS);
+  const parsed = parseArgs(args, DRAFT_OPTIONS, [1, 1]);
 
   if (wantsHelp(parsed)) {
     console.log(`
@@ -519,11 +483,10 @@ Examples:
   }
 
   const draftId = getPositional(parsed, 0);
-  if (!draftId) {
-    console.error("Error: Draft ID required");
-    console.error("Usage: fastmail draft update <id> [options]");
-    process.exit(1);
-  }
+  if (!draftId)
+    throw usageError(
+      "Draft ID required. Usage: fastmail draft update <id> [options]",
+    );
 
   // Check if any changes specified
   const hasChanges =
@@ -536,11 +499,9 @@ Examples:
     getBoolean(parsed, "stdin");
 
   if (!hasChanges) {
-    console.error("Error: No changes specified");
-    console.error(
-      "Use --to, --cc, --bcc, --subject, --body, --body-file, or --stdin",
+    throw usageError(
+      "No changes specified. Use --to, --cc, --bcc, --subject, --body, --body-file, or --stdin",
     );
-    process.exit(1);
   }
 
   const client = await getClient();
@@ -565,16 +526,11 @@ Examples:
     fetchHTMLBodyValues: true,
   });
 
-  if (getResult.notFound.includes(draftId)) {
-    console.error(`Error: Draft not found: ${draftId}`);
-    process.exit(1);
+  if (getResult.notFound.includes(draftId) || !getResult.list[0]) {
+    throw runtimeError(`Draft not found: ${draftId}`);
   }
 
   const existingDraft = getResult.list[0];
-  if (!existingDraft) {
-    console.error(`Error: Draft not found: ${draftId}`);
-    process.exit(1);
-  }
 
   // Get drafts mailbox ID
   const draftsMailboxId = await getDraftsMailboxId(client);
@@ -656,10 +612,9 @@ Examples:
   const created = result.created?.newDraft;
   if (!created) {
     const error = result.notCreated?.newDraft;
-    console.error(
+    throw runtimeError(
       `Error updating draft: ${error?.description ?? "Unknown error"}`,
     );
-    process.exit(1);
   }
 
   // Check if old draft was destroyed

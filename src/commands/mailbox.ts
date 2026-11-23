@@ -9,8 +9,8 @@ import {
   parseArgs,
   wantsHelp,
 } from "../args.ts";
-import { loadConfig } from "../config.ts";
-import { JmapClient } from "../jmap/client.ts";
+import { getClient } from "../client.ts";
+import { runtimeError, usageError } from "../error.ts";
 import { getMailboxes, type Mailbox, setMailboxes } from "../jmap/mailbox.ts";
 
 /** Common options for mailbox commands */
@@ -19,23 +19,8 @@ const MAILBOX_OPTIONS = {
   parent: { type: "string" as const },
   name: { type: "string" as const },
   force: { type: "boolean" as const },
+  json: { type: "boolean" as const },
 };
-
-/**
- * Get authenticated JMAP client.
- */
-async function getClient(): Promise<JmapClient> {
-  const envToken = process.env.FASTMAIL_API_TOKEN;
-  const config = await loadConfig();
-
-  const token = envToken || config.apiToken;
-  if (!token) {
-    console.error("Error: Not authenticated. Run 'fastmail auth login' first.");
-    process.exit(1);
-  }
-
-  return new JmapClient({ token });
-}
 
 /**
  * Build tree structure from flat mailbox list.
@@ -105,7 +90,7 @@ function formatMailbox(mailbox: Mailbox & { depth?: number }): string {
  * List mailboxes.
  */
 export async function listMailboxes(args: string[]): Promise<void> {
-  const parsed = parseArgs(args, MAILBOX_OPTIONS);
+  const parsed = parseArgs(args, MAILBOX_OPTIONS, [0, 0]);
 
   if (wantsHelp(parsed)) {
     console.log(`Usage: fastmail mailbox list [options]
@@ -122,7 +107,7 @@ Options:
   const client = await getClient();
   const result = await getMailboxes(client);
 
-  if (getBoolean(parsed, "tree")) {
+  if (getBoolean(parsed, "tree") && !getBoolean(parsed, "json")) {
     const tree = buildTree(result.list);
     const flat = flattenTree(tree);
 
@@ -138,10 +123,10 @@ Options:
  * Create a mailbox.
  */
 export async function createMailbox(args: string[]): Promise<void> {
-  const parsed = parseArgs(args, MAILBOX_OPTIONS);
+  const parsed = parseArgs(args, MAILBOX_OPTIONS, [1, 1]);
   const name = getPositional(parsed, 0);
 
-  if (wantsHelp(parsed) || !name) {
+  if (wantsHelp(parsed)) {
     console.log(`Usage: fastmail mailbox create <name> [options]
 
 Create a new mailbox.
@@ -152,6 +137,10 @@ Options:
 `);
     return;
   }
+  if (!name)
+    throw usageError(
+      "Mailbox name required. Usage: fastmail mailbox create <name>",
+    );
 
   const parentId = getString(parsed, "parent");
 
@@ -166,14 +155,16 @@ Options:
   });
 
   if (result.created?.new) {
-    console.log(`Created mailbox: ${result.created.new.id}`);
-    console.log(JSON.stringify(result.created.new, null, 2));
-  } else if (result.notCreated?.new) {
-    console.error(`Failed to create mailbox: ${result.notCreated.new.type}`);
-    if (result.notCreated.new.description) {
-      console.error(result.notCreated.new.description);
+    if (getBoolean(parsed, "json")) {
+      console.log(JSON.stringify(result.created.new, null, 2));
+    } else {
+      console.error(`Created mailbox: ${result.created.new.id}`);
     }
-    process.exit(1);
+  } else {
+    const error = result.notCreated?.new;
+    throw runtimeError(
+      `Failed to create mailbox: ${error?.type ?? "unknown"}${error?.description ? ` - ${error.description}` : ""}`,
+    );
   }
 }
 
@@ -181,10 +172,10 @@ Options:
  * Update a mailbox.
  */
 export async function updateMailbox(args: string[]): Promise<void> {
-  const parsed = parseArgs(args, MAILBOX_OPTIONS);
+  const parsed = parseArgs(args, MAILBOX_OPTIONS, [1, 1]);
   const id = getPositional(parsed, 0);
 
-  if (wantsHelp(parsed) || !id) {
+  if (wantsHelp(parsed)) {
     console.log(`Usage: fastmail mailbox update <id> [options]
 
 Update mailbox properties.
@@ -196,6 +187,10 @@ Options:
 `);
     return;
   }
+  if (!id)
+    throw usageError(
+      "Mailbox ID required. Usage: fastmail mailbox update <id>",
+    );
 
   const updates: {
     name?: string;
@@ -213,8 +208,7 @@ Options:
   }
 
   if (Object.keys(updates).length === 0) {
-    console.error("Error: No updates specified. Use --name or --parent.");
-    process.exit(1);
+    throw usageError("No updates specified. Use --name or --parent.");
   }
 
   const client = await getClient();
@@ -225,13 +219,14 @@ Options:
   });
 
   if (result.updated?.[id] !== undefined) {
-    console.log(`Updated mailbox: ${id}`);
-  } else if (result.notUpdated?.[id]) {
-    console.error(`Failed to update mailbox: ${result.notUpdated[id].type}`);
-    if (result.notUpdated[id].description) {
-      console.error(result.notUpdated[id].description);
-    }
-    process.exit(1);
+    if (getBoolean(parsed, "json"))
+      console.log(JSON.stringify({ id, updated: true }));
+    else console.error(`Updated mailbox: ${id}`);
+  } else {
+    const error = result.notUpdated?.[id];
+    throw runtimeError(
+      `Failed to update mailbox: ${error?.type ?? "unknown"}${error?.description ? ` - ${error.description}` : ""}`,
+    );
   }
 }
 
@@ -239,10 +234,10 @@ Options:
  * Delete a mailbox.
  */
 export async function deleteMailbox(args: string[]): Promise<void> {
-  const parsed = parseArgs(args, MAILBOX_OPTIONS);
+  const parsed = parseArgs(args, MAILBOX_OPTIONS, [1, 1]);
   const id = getPositional(parsed, 0);
 
-  if (wantsHelp(parsed) || !id) {
+  if (wantsHelp(parsed)) {
     console.log(`Usage: fastmail mailbox delete <id> [options]
 
 Delete a mailbox.
@@ -253,6 +248,10 @@ Options:
 `);
     return;
   }
+  if (!id)
+    throw usageError(
+      "Mailbox ID required. Usage: fastmail mailbox delete <id>",
+    );
 
   const force = getBoolean(parsed, "force");
 
@@ -263,12 +262,13 @@ Options:
   });
 
   if (result.destroyed?.includes(id)) {
-    console.log(`Deleted mailbox: ${id}`);
-  } else if (result.notDestroyed?.[id]) {
-    console.error(`Failed to delete mailbox: ${result.notDestroyed[id].type}`);
-    if (result.notDestroyed[id].description) {
-      console.error(result.notDestroyed[id].description);
-    }
-    process.exit(1);
+    if (getBoolean(parsed, "json"))
+      console.log(JSON.stringify({ id, deleted: true }));
+    else console.error(`Deleted mailbox: ${id}`);
+  } else {
+    const error = result.notDestroyed?.[id];
+    throw runtimeError(
+      `Failed to delete mailbox: ${error?.type ?? "unknown"}${error?.description ? ` - ${error.description}` : ""}`,
+    );
   }
 }

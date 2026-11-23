@@ -17,7 +17,10 @@ fastmail unsubscribe execute <emailId> [options]
 | Option | Description |
 |--------|-------------|
 | `--method <type>` | Prefer method: `http` or `mailto` (default: `https`) |
-| `--auto` | Skip confirmation prompt |
+| `--auto` | Execute without confirmation; required without a TTY |
+| `--json` | Print a JSON result on stdout |
+
+Without `--auto`, the command asks for confirmation on a TTY. It exits 2 before making requests when stdin is not a TTY.
 
 ## batch
 

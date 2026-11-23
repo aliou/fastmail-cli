@@ -5,6 +5,7 @@
 
 import {
   checkConfigPermissions,
+  getToken,
   loadConfig,
   saveConfig,
   updateConfig,
@@ -129,10 +130,7 @@ export async function getAuthStatus(): Promise<AuthStatus> {
   // Check permissions first
   await checkConfigPermissions();
 
-  // Get token (env or config)
-  const envToken = process.env.FASTMAIL_API_TOKEN;
-  const config = await loadConfig();
-  const token = envToken ?? config.apiToken;
+  const { token, source: tokenSource } = await getToken();
 
   if (!token) {
     return {
@@ -140,8 +138,6 @@ export async function getAuthStatus(): Promise<AuthStatus> {
       error: "No API token configured",
     };
   }
-
-  const tokenSource = envToken ? "env" : "config";
 
   try {
     const session = await fetchSession(token);
@@ -188,7 +184,7 @@ export async function readTokenFromStdin(): Promise<string | null> {
  * Prompt for token interactively.
  */
 export async function promptForToken(): Promise<string> {
-  process.stdout.write("Enter API token: ");
+  process.stderr.write("Enter API token: ");
 
   return new Promise((resolve) => {
     let input = "";

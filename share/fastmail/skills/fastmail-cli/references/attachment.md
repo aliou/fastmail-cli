@@ -28,4 +28,7 @@ Downloads all attachments from an email.
 
 | Option | Description |
 |--------|-------------|
-| `-d, --dir <path>` | Output directory (default: current directory) |
+| `--dir <path>` | Output directory (default: current directory) |
+| `--json` | Print downloaded file metadata on stdout |
+
+`-d` is deprecated; use `--dir`. Download messages go to stderr.

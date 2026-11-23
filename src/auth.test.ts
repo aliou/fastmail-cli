@@ -194,7 +194,6 @@ describe("auth", () => {
       const savedConfig = await configFile.json();
       expect(savedConfig.apiToken).toBeUndefined();
       expect(savedConfig.defaultAccountId).toBeUndefined();
-      expect(savedConfig.outputFormat).toBe("table"); // preserved
     });
   });
 

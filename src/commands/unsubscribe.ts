@@ -4,6 +4,7 @@
 
 import { exec } from "node:child_process";
 import { platform } from "node:os";
+import { createInterface } from "node:readline/promises";
 import {
   getBoolean,
   getNumber,
@@ -12,8 +13,9 @@ import {
   parseArgs,
   wantsHelp,
 } from "../args.ts";
-import { loadConfig } from "../config.ts";
-import { JmapClient } from "../jmap/client.ts";
+import { getClient } from "../client.ts";
+import { runtimeError, usageError } from "../error.ts";
+import type { JmapClient } from "../jmap/client.ts";
 import {
   type Email,
   type EmailFilter,
@@ -22,6 +24,7 @@ import {
   queryEmails,
 } from "../jmap/email.ts";
 import { JMAP_MAIL_CAPABILITY } from "../jmap/types.ts";
+import { resolveMailboxId } from "../mailbox-resolver.ts";
 
 /** Common options for unsubscribe commands */
 const UNSUBSCRIBE_OPTIONS = {
@@ -33,64 +36,6 @@ const UNSUBSCRIBE_OPTIONS = {
   json: { type: "boolean" as const },
   interactive: { type: "boolean" as const, short: "i" },
 };
-
-/**
- * Get authenticated JMAP client.
- */
-async function getClient(): Promise<JmapClient> {
-  const envToken = process.env.FASTMAIL_API_TOKEN;
-  const config = await loadConfig();
-  const token = envToken ?? config.apiToken;
-
-  if (!token) {
-    throw new Error(
-      "Not authenticated. Run 'fastmail auth login' or set FASTMAIL_API_TOKEN",
-    );
-  }
-
-  return new JmapClient({ token });
-}
-
-/**
- * Resolve mailbox name to ID.
- */
-async function resolveMailboxId(
-  client: JmapClient,
-  nameOrId: string,
-): Promise<string> {
-  // If it looks like an ID (contains special chars), use it directly
-  if (nameOrId.includes("~") || nameOrId.includes("/")) {
-    return nameOrId;
-  }
-
-  // Otherwise, query mailboxes to find by name
-  const accountId = await client.getPrimaryAccountId(JMAP_MAIL_CAPABILITY);
-  const response = await client.call<{
-    accountId: string;
-    state: string;
-    list: Array<{ id: string; name: string; role?: string }>;
-  }>([JMAP_MAIL_CAPABILITY], "Mailbox/get", {
-    accountId,
-  });
-
-  // Try exact name match first
-  let mailbox = response.list.find(
-    (mb) => mb.name.toLowerCase() === nameOrId.toLowerCase(),
-  );
-
-  // If no exact match, try role match (e.g., "inbox" -> role "inbox")
-  if (!mailbox) {
-    mailbox = response.list.find(
-      (mb) => mb.role?.toLowerCase() === nameOrId.toLowerCase(),
-    );
-  }
-
-  if (!mailbox) {
-    throw new Error(`Mailbox not found: ${nameOrId}`);
-  }
-
-  return mailbox.id;
-}
 
 /**
  * Unsubscribe method types.
@@ -291,7 +236,9 @@ async function unsubscribeMailto(
  * Show unsubscribe methods for an email.
  */
 export async function showUnsubscribe(args: string[]): Promise<void> {
-  const parsed = parseArgs(args, UNSUBSCRIBE_OPTIONS);
+  const parsed = parseArgs(args, UNSUBSCRIBE_OPTIONS, [1, 1]);
+  if (!wantsHelp(parsed) && !getPositional(parsed, 0))
+    throw usageError("Email ID required");
 
   if (wantsHelp(parsed)) {
     console.log(`
@@ -307,10 +254,7 @@ Options:
 
   const emailId = getPositional(parsed, 0);
 
-  if (!emailId) {
-    console.error("Error: Email ID required");
-    process.exit(1);
-  }
+  if (!emailId) throw usageError("Email ID required");
 
   const client = await getClient();
 
@@ -320,16 +264,11 @@ Options:
     properties: ["id", "subject", "from", "headers"],
   });
 
-  if (result.notFound.includes(emailId)) {
-    console.error("Email not found");
-    process.exit(1);
-  }
+  if (result.notFound.includes(emailId))
+    throw runtimeError(`Email not found: ${emailId}`);
 
   const email = result.list[0];
-  if (!email?.headers) {
-    console.error("No headers found");
-    process.exit(1);
-  }
+  if (!email?.headers) throw runtimeError("No headers found");
 
   const methods = parseListUnsubscribe(email.headers);
 
@@ -362,11 +301,25 @@ Options:
  * Execute unsubscribe for an email.
  */
 export async function executeUnsubscribe(args: string[]): Promise<void> {
-  const parsed = parseArgs(args, {
-    ...UNSUBSCRIBE_OPTIONS,
-    method: { type: "string" as const },
-    auto: { type: "boolean" as const },
-  });
+  const parsed = parseArgs(
+    args,
+    {
+      ...UNSUBSCRIBE_OPTIONS,
+      method: { type: "string" as const },
+      auto: { type: "boolean" as const },
+    },
+    [1, 1],
+  );
+  if (!wantsHelp(parsed)) {
+    if (!getPositional(parsed, 0)) throw usageError("Email ID required");
+    if (args.includes("-i"))
+      console.error("fastmail: -i is deprecated; use --interactive instead");
+    if (!getBoolean(parsed, "auto") && !process.stdin.isTTY) {
+      throw usageError(
+        "Confirmation requires a TTY; use --auto for non-interactive execution",
+      );
+    }
+  }
 
   if (wantsHelp(parsed)) {
     console.log(`
@@ -384,10 +337,7 @@ Options:
 
   const emailId = getPositional(parsed, 0);
 
-  if (!emailId) {
-    console.error("Error: Email ID required");
-    process.exit(1);
-  }
+  if (!emailId) throw usageError("Email ID required");
 
   const client = await getClient();
 
@@ -397,23 +347,15 @@ Options:
     properties: ["id", "subject", "from", "headers"],
   });
 
-  if (result.notFound.includes(emailId)) {
-    console.error("Email not found");
-    process.exit(1);
-  }
+  if (result.notFound.includes(emailId))
+    throw runtimeError(`Email not found: ${emailId}`);
 
   const email = result.list[0];
-  if (!email?.headers) {
-    console.error("No headers found");
-    process.exit(1);
-  }
+  if (!email?.headers) throw runtimeError("No headers found");
 
   const methods = parseListUnsubscribe(email.headers);
 
-  if (methods.length === 0) {
-    console.error("No unsubscribe methods found");
-    process.exit(1);
-  }
+  if (methods.length === 0) throw runtimeError("No unsubscribe methods found");
 
   // Select method
   const preferMethod = getString(parsed, "method") ?? "https";
@@ -423,28 +365,47 @@ Options:
     selected = methods[0]; // Fallback to first method
   }
 
-  if (!getBoolean(parsed, "auto")) {
-    console.error(`Will unsubscribe via ${selected?.type}: ${selected?.url}`);
-    console.error("(Use --auto to skip confirmation)");
-    // In real implementation, would prompt for confirmation
+  if (!getBoolean(parsed, "auto") && selected) {
+    const prompt = createInterface({
+      input: process.stdin,
+      output: process.stderr,
+    });
+    const answer = await prompt.question(
+      `Unsubscribe via ${selected.type}: ${selected.url}? [y/N] `,
+    );
+    prompt.close();
+    if (!/^y(es)?$/i.test(answer.trim())) {
+      console.error("Unsubscribe cancelled");
+      return;
+    }
   }
 
-  // Execute unsubscribe
+  if (!selected) throw runtimeError("No unsubscribe method selected");
   try {
-    if (selected?.type === "mailto") {
+    if (selected.type === "mailto")
       await unsubscribeMailto(client, selected.url);
-      console.log("Unsubscribe email sent");
-    } else if (selected) {
-      await unsubscribeHttp(selected.url, selected.oneClick ?? false);
-      if (selected.oneClick) {
-        console.log("Unsubscribed via one-click");
-      } else {
-        console.log("Opened unsubscribe page in browser");
-      }
+    else await unsubscribeHttp(selected.url, selected.oneClick ?? false);
+    const message =
+      selected.type === "mailto"
+        ? "Unsubscribe email sent"
+        : selected.oneClick
+          ? "Unsubscribed via one-click"
+          : "Opened unsubscribe page in browser";
+    if (getBoolean(parsed, "json")) {
+      console.log(
+        JSON.stringify(
+          { emailId, method: selected.type, status: "unsubscribed" },
+          null,
+          2,
+        ),
+      );
+    } else {
+      console.error(message);
     }
   } catch (error) {
-    console.error(`Unsubscribe failed: ${error}`);
-    process.exit(1);
+    throw runtimeError(
+      `Unsubscribe failed: ${error instanceof Error ? error.message : String(error)}`,
+    );
   }
 }
 
@@ -452,11 +413,15 @@ Options:
  * Batch unsubscribe from newsletters.
  */
 export async function batchUnsubscribe(args: string[]): Promise<void> {
-  const parsed = parseArgs(args, {
-    ...UNSUBSCRIBE_OPTIONS,
-    "dry-run": { type: "boolean" as const },
-    "one-click-only": { type: "boolean" as const },
-  });
+  const parsed = parseArgs(
+    args,
+    {
+      ...UNSUBSCRIBE_OPTIONS,
+      "dry-run": { type: "boolean" as const },
+      "one-click-only": { type: "boolean" as const },
+    },
+    [0, 0],
+  );
 
   if (wantsHelp(parsed)) {
     console.log(`
@@ -479,6 +444,7 @@ Examples:
     return;
   }
 
+  const limit = getNumber(parsed, "limit") ?? 50;
   const client = await getClient();
 
   // Query emails
@@ -495,12 +461,12 @@ Examples:
     filter.inMailbox = mailboxId;
   }
 
-  const limit = getNumber(parsed, "limit") ?? 50;
-
   const queryResult = await queryEmails(client, { filter, limit });
 
   if (queryResult.ids.length === 0) {
-    console.log("No emails found");
+    if (getBoolean(parsed, "json"))
+      console.log(JSON.stringify({ total: 0, results: [] }));
+    else console.error("No emails found");
     return;
   }
 

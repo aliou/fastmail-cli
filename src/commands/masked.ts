@@ -2,9 +2,16 @@
  * Masked email command handlers.
  */
 
-import { getPositional, getString, parseArgs, wantsHelp } from "../args.ts";
-import { loadConfig } from "../config.ts";
-import { JmapClient } from "../jmap/client.ts";
+import {
+  getBoolean,
+  getPositional,
+  getString,
+  parseArgs,
+  wantsHelp,
+} from "../args.ts";
+import { getClient } from "../client.ts";
+import { runtimeError, usageError } from "../error.ts";
+import type { JmapClient } from "../jmap/client.ts";
 import {
   getMaskedEmails,
   MASKED_EMAIL_CAPABILITY,
@@ -18,23 +25,8 @@ const MASKED_OPTIONS = {
   description: { type: "string" as const },
   "for-domain": { type: "string" as const },
   prefix: { type: "string" as const },
+  json: { type: "boolean" as const },
 };
-
-/**
- * Get authenticated JMAP client.
- */
-async function getClient(): Promise<JmapClient> {
-  const envToken = process.env.FASTMAIL_API_TOKEN;
-  const config = await loadConfig();
-
-  const token = envToken || config.apiToken;
-  if (!token) {
-    console.error("Error: Not authenticated. Run 'fastmail auth login' first.");
-    process.exit(1);
-  }
-
-  return new JmapClient({ token });
-}
 
 /**
  * Check if masked email capability is available.
@@ -43,17 +35,12 @@ async function checkCapability(client: JmapClient): Promise<void> {
   try {
     const session = await client.getSession();
     if (!session.capabilities[MASKED_EMAIL_CAPABILITY]) {
-      console.error(
-        "Error: Masked Email feature is not available for this account.",
-      );
-      console.error(
-        "This is a FastMail-specific feature that may require a paid account.",
-      );
-      process.exit(1);
+      throw runtimeError("Masked Email is not available for this account");
     }
   } catch (error) {
-    console.error("Error: Failed to check account capabilities.");
-    throw error;
+    throw runtimeError(
+      `Failed to check account capabilities: ${error instanceof Error ? error.message : String(error)}`,
+    );
   }
 }
 
@@ -61,7 +48,7 @@ async function checkCapability(client: JmapClient): Promise<void> {
  * List masked email addresses.
  */
 export async function listMaskedEmails(args: string[]): Promise<void> {
-  const parsed = parseArgs(args, MASKED_OPTIONS);
+  const parsed = parseArgs(args, MASKED_OPTIONS, [0, 0]);
 
   if (wantsHelp(parsed)) {
     console.log(`Usage: fastmail masked list [options]
@@ -96,7 +83,7 @@ Options:
  * Create a masked email address.
  */
 export async function createMaskedEmail(args: string[]): Promise<void> {
-  const parsed = parseArgs(args, MASKED_OPTIONS);
+  const parsed = parseArgs(args, MASKED_OPTIONS, [0, 0]);
 
   if (wantsHelp(parsed)) {
     console.log(`Usage: fastmail masked create [options]
@@ -148,16 +135,14 @@ Example:
   });
 
   if (result.created?.new) {
-    console.log("Created masked email:");
-    console.log(JSON.stringify(result.created.new, null, 2));
-  } else if (result.notCreated?.new) {
-    console.error(
-      `Failed to create masked email: ${result.notCreated.new.type}`,
+    if (getBoolean(parsed, "json"))
+      console.log(JSON.stringify(result.created.new, null, 2));
+    else console.error(`Created masked email: ${result.created.new.id}`);
+  } else {
+    const error = result.notCreated?.new;
+    throw runtimeError(
+      `Failed to create masked email: ${error?.type ?? "unknown"}${error?.description ? ` - ${error.description}` : ""}`,
     );
-    if (result.notCreated.new.description) {
-      console.error(result.notCreated.new.description);
-    }
-    process.exit(1);
   }
 }
 
@@ -165,10 +150,10 @@ Example:
  * Update a masked email address.
  */
 export async function updateMaskedEmail(args: string[]): Promise<void> {
-  const parsed = parseArgs(args, MASKED_OPTIONS);
+  const parsed = parseArgs(args, MASKED_OPTIONS, [1, 1]);
   const id = getPositional(parsed, 0);
 
-  if (wantsHelp(parsed) || !id) {
+  if (wantsHelp(parsed)) {
     console.log(`Usage: fastmail masked update <id> [options]
 
 Update a masked email address.
@@ -184,9 +169,10 @@ Example:
 `);
     return;
   }
-
-  const client = await getClient();
-  await checkCapability(client);
+  if (!id)
+    throw usageError(
+      "Masked email ID required. Usage: fastmail masked update <id>",
+    );
 
   const updates: {
     state?: MaskedEmailState;
@@ -202,10 +188,9 @@ Example:
       state !== "pending" &&
       state !== "deleted"
     ) {
-      console.error(
-        "Error: Invalid state. Must be: enabled, disabled, pending, or deleted",
+      throw usageError(
+        "Invalid state. Must be: enabled, disabled, pending, or deleted",
       );
-      process.exit(1);
     }
     updates.state = state as MaskedEmailState;
   }
@@ -221,12 +206,13 @@ Example:
   }
 
   if (Object.keys(updates).length === 0) {
-    console.error(
-      "Error: No updates specified. Use --state, --description, or --for-domain.",
+    throw usageError(
+      "No updates specified. Use --state, --description, or --for-domain.",
     );
-    process.exit(1);
   }
 
+  const client = await getClient();
+  await checkCapability(client);
   const result = await setMaskedEmails(client, {
     update: {
       [id]: updates,
@@ -234,18 +220,16 @@ Example:
   });
 
   if (result.updated?.[id] !== undefined) {
-    console.log(`Updated masked email: ${id}`);
-    if (result.updated[id]) {
-      console.log(JSON.stringify(result.updated[id], null, 2));
-    }
-  } else if (result.notUpdated?.[id]) {
-    console.error(
-      `Failed to update masked email: ${result.notUpdated[id].type}`,
+    if (getBoolean(parsed, "json"))
+      console.log(
+        JSON.stringify(result.updated[id] ?? { id, updated: true }, null, 2),
+      );
+    else console.error(`Updated masked email: ${id}`);
+  } else {
+    const error = result.notUpdated?.[id];
+    throw runtimeError(
+      `Failed to update masked email: ${error?.type ?? "unknown"}${error?.description ? ` - ${error.description}` : ""}`,
     );
-    if (result.notUpdated[id].description) {
-      console.error(result.notUpdated[id].description);
-    }
-    process.exit(1);
   }
 }
 
@@ -253,10 +237,10 @@ Example:
  * Delete a masked email address.
  */
 export async function deleteMaskedEmail(args: string[]): Promise<void> {
-  const parsed = parseArgs(args, MASKED_OPTIONS);
+  const parsed = parseArgs(args, MASKED_OPTIONS, [1, 1]);
   const id = getPositional(parsed, 0);
 
-  if (wantsHelp(parsed) || !id) {
+  if (wantsHelp(parsed)) {
     console.log(`Usage: fastmail masked delete <id>
 
 Delete a masked email address (sets state to deleted).
@@ -269,6 +253,10 @@ from your account history.
 `);
     return;
   }
+  if (!id)
+    throw usageError(
+      "Masked email ID required. Usage: fastmail masked delete <id>",
+    );
 
   const client = await getClient();
   await checkCapability(client);
@@ -278,14 +266,13 @@ from your account history.
   });
 
   if (result.destroyed?.includes(id)) {
-    console.log(`Deleted masked email: ${id}`);
-  } else if (result.notDestroyed?.[id]) {
-    console.error(
-      `Failed to delete masked email: ${result.notDestroyed[id].type}`,
+    if (getBoolean(parsed, "json"))
+      console.log(JSON.stringify({ id, deleted: true }));
+    else console.error(`Deleted masked email: ${id}`);
+  } else {
+    const error = result.notDestroyed?.[id];
+    throw runtimeError(
+      `Failed to delete masked email: ${error?.type ?? "unknown"}${error?.description ? ` - ${error.description}` : ""}`,
     );
-    if (result.notDestroyed[id].description) {
-      console.error(result.notDestroyed[id].description);
-    }
-    process.exit(1);
   }
 }

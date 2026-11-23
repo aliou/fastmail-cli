@@ -127,7 +127,7 @@ jobs:
             dist/fastmail-darwin-arm64 \
             dist/fastmail-linux-arm64 \
             dist/fastmail-linux-x64 \
-            share/SKILL.md
+            dist/fastmail-share.tar.gz
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -136,12 +136,14 @@ jobs:
         run: |
           VERSION=$(jq -r '.version' package.json)
           DARWIN_SHA256=$(sha256sum dist/fastmail-darwin-arm64 | awk '{print $1}')
+          SHARE_SHA256=$(sha256sum dist/fastmail-share.tar.gz | awk '{print $1}')
           gh api repos/aliou/homebrew-toolbox/dispatches \
             -f event_type=update-formula \
             -f 'client_payload[formula]=fastmail-cli' \
             -f "client_payload[version]=${VERSION}" \
             -f 'client_payload[binary]=fastmail' \
             -f 'client_payload[repo]=aliou/fastmail-cli' \
-            -f "client_payload[sha256]=${DARWIN_SHA256}"
+            -f "client_payload[sha256]=${DARWIN_SHA256}" \
+            -f "client_payload[share_sha256]=${SHARE_SHA256}"
         env:
           GITHUB_TOKEN: ${{ secrets.TAP_GITHUB_TOKEN }}

@@ -50,7 +50,9 @@
           mkdir -p $out/lib/fastmail-cli
           cp -r node_modules $out/lib/fastmail-cli/
           cp -r src $out/lib/fastmail-cli/
+          cp -r share $out/lib/fastmail-cli/
           cp package.json $out/lib/fastmail-cli/
+          cp -r share $out/share
 
           mkdir -p $out/bin
           cat > $out/bin/fastmail << 'EOF'
@@ -91,6 +93,7 @@
             mkdir -p $out/bin
             cp $src $out/bin/fastmail
             chmod +x $out/bin/fastmail
+            cp -r ${./share} $out/share
           '';
 
           meta = with pkgs.lib; {

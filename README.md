@@ -28,52 +28,59 @@ nix run github:aliou/fastmail-cli
 
 ## Setup
 
-1. Get an API token from FastMail:
-   - Go to Settings > Privacy & Security > Integrations > API tokens
-   - Create a new token with the scopes you need
+1. Get an API token from FastMail under Settings > Privacy & Security > Integrations > API tokens.
+2. Store the token without putting it in command arguments:
 
-2. Configure the CLI:
    ```bash
-   fastmail auth login
+   fastmail auth login --token-file /path/to/token
    ```
+
+   Or pipe it through stdin:
+
+   ```bash
+   fastmail auth login --token-file - < /path/to/token
+   ```
+
+Interactive login is available on a TTY with `fastmail auth login`. `--token` and `FASTMAIL_API_TOKEN` are deprecated; use token files or the stored config instead.
 
 ## Usage
 
 ```bash
-# Authentication
-fastmail auth login      # Store API token
-fastmail auth logout     # Remove credentials
-fastmail auth status     # Check auth status
-
-# Email
-fastmail email list               # List recent emails
-fastmail email get <id>           # Get email by ID
-fastmail email send               # Send an email
-fastmail email search <query>     # Search emails
-
-# Mailboxes
-fastmail mailbox list             # List mailboxes
-fastmail mailbox create <name>    # Create mailbox
-fastmail mailbox delete <id>      # Delete mailbox
-
-# Masked Email
-fastmail masked list              # List masked addresses
-fastmail masked create            # Create masked address
-fastmail masked delete <id>       # Delete masked address
+fastmail auth status
+fastmail email list --mailbox Inbox --limit 10
+fastmail email get <id>
+fastmail email send --to person@example.com --subject "Hello" --body "Hi"
+fastmail email search "from:person@example.com" --after 7d
+fastmail mailbox list
+fastmail mailbox create <name>
+fastmail masked create --for-domain example.com
+fastmail unsubscribe execute <id> --auto
 ```
 
-## Shell Completions
+Run `fastmail help`, `fastmail help <command>`, or `fastmail help <command> <subcommand>` for help. Usage errors exit 2; runtime failures exit 1.
+
+Structured commands accept `--json`. Stdout contains data such as JSON and URLs. Progress, confirmations, warnings, and errors go to stderr.
+
+## Shell completion
 
 ```bash
 # Bash
-source <(fastmail --completion bash)
+source <(fastmail completion bash)
 
 # Zsh
-source <(fastmail --completion zsh)
+source <(fastmail completion zsh)
 
 # Fish
-fastmail --completion fish | source
+fastmail completion fish | source
 ```
+
+## Agent instructions
+
+```bash
+fastmail skill path
+```
+
+Read the printed `SKILL.md` path for the bundled FastMail CLI agent instructions and command references.
 
 ## Configuration
 
@@ -81,21 +88,15 @@ Config file: `~/.config/fastmail-cli/config.json`
 
 ## Development
 
+All commands run inside the Nix development shell:
+
 ```bash
-# Enter dev shell
 nix develop
-
-# Run
 bun run start
-
-# Lint
+bun test
 bun run lint
-
-# Format
-bun run format
-
-# Type check
 bun run typecheck
+bun run build
 ```
 
 ## License

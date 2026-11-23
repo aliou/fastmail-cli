@@ -10,15 +10,16 @@ import {
   parseArgs,
   wantsHelp,
 } from "../args.ts";
-import { loadConfig } from "../config.ts";
-import { JmapClient } from "../jmap/client.ts";
+import { getClient } from "../client.ts";
+import { runtimeError, usageError } from "../error.ts";
+import type { JmapClient } from "../jmap/client.ts";
 import {
   type EmailFilter,
   getEmails,
   queryEmails,
   setEmails,
 } from "../jmap/email.ts";
-import { JMAP_MAIL_CAPABILITY } from "../jmap/types.ts";
+import { resolveMailboxId } from "../mailbox-resolver.ts";
 
 /** Common options for batch commands */
 const BATCH_OPTIONS = {
@@ -35,65 +36,8 @@ const BATCH_OPTIONS = {
   "remove-keyword": { type: "string" as const },
   "add-mailbox": { type: "string" as const },
   "remove-mailbox": { type: "string" as const },
+  json: { type: "boolean" as const },
 };
-
-/**
- * Get authenticated JMAP client.
- */
-async function getClient(): Promise<JmapClient> {
-  const envToken = process.env.FASTMAIL_API_TOKEN;
-  const config = await loadConfig();
-  const token = envToken ?? config.apiToken;
-
-  if (!token) {
-    throw new Error(
-      "Not authenticated. Run 'fastmail auth login' or set FASTMAIL_API_TOKEN",
-    );
-  }
-
-  return new JmapClient({ token });
-}
-
-/**
- * Resolve mailbox name to ID.
- */
-async function resolveMailboxId(
-  client: JmapClient,
-  nameOrId: string,
-): Promise<string> {
-  // If it looks like an ID (contains special chars), use it directly
-  if (nameOrId.includes("~") || nameOrId.includes("/")) {
-    return nameOrId;
-  }
-
-  // Otherwise, query mailboxes to find by name
-  const accountId = await client.getPrimaryAccountId(JMAP_MAIL_CAPABILITY);
-  const response = await client.call<{
-    accountId: string;
-    state: string;
-    list: Array<{ id: string; name: string; role?: string }>;
-  }>([JMAP_MAIL_CAPABILITY], "Mailbox/get", {
-    accountId,
-  });
-
-  // Try exact name match first
-  let mailbox = response.list.find(
-    (mb) => mb.name.toLowerCase() === nameOrId.toLowerCase(),
-  );
-
-  // If no exact match, try role match (e.g., "inbox" -> role "inbox")
-  if (!mailbox) {
-    mailbox = response.list.find(
-      (mb) => mb.role?.toLowerCase() === nameOrId.toLowerCase(),
-    );
-  }
-
-  if (!mailbox) {
-    throw new Error(`Mailbox not found: ${nameOrId}`);
-  }
-
-  return mailbox.id;
-}
 
 /**
  * Batch set emails with chunking support.
@@ -169,6 +113,20 @@ async function batchDestroyEmails(
   return { destroyed: totalDestroyed, failed: totalFailed };
 }
 
+function validateSelection(parsed: ParsedArgs): void {
+  getNumber(parsed, "limit");
+  if (
+    parsed.positionals.length === 0 &&
+    !getString(parsed, "ids") &&
+    !getString(parsed, "mailbox") &&
+    !getString(parsed, "query")
+  ) {
+    throw usageError(
+      "No emails specified. Use positional IDs, --ids, --mailbox, or --query",
+    );
+  }
+}
+
 /**
  * Resolve email IDs from various sources.
  */
@@ -217,7 +175,7 @@ async function resolveEmailIds(
     return result.ids;
   }
 
-  throw new Error(
+  throw usageError(
     "No emails specified. Use positional IDs, --ids, --mailbox, or --query",
   );
 }
@@ -227,6 +185,7 @@ async function resolveEmailIds(
  */
 export async function markRead(args: string[]): Promise<void> {
   const parsed = parseArgs(args, BATCH_OPTIONS);
+  if (!wantsHelp(parsed)) validateSelection(parsed);
 
   if (wantsHelp(parsed)) {
     console.log(`
@@ -283,9 +242,7 @@ Examples:
     ),
   );
 
-  if (result.failed > 0) {
-    process.exit(1);
-  }
+  if (result.failed > 0) throw runtimeError(`${result.failed} emails failed`);
 }
 
 /**
@@ -293,6 +250,7 @@ Examples:
  */
 export async function markUnread(args: string[]): Promise<void> {
   const parsed = parseArgs(args, BATCH_OPTIONS);
+  if (!wantsHelp(parsed)) validateSelection(parsed);
 
   if (wantsHelp(parsed)) {
     console.log(`
@@ -349,9 +307,7 @@ Examples:
     ),
   );
 
-  if (result.failed > 0) {
-    process.exit(1);
-  }
+  if (result.failed > 0) throw runtimeError(`${result.failed} emails failed`);
 }
 
 /**
@@ -359,6 +315,7 @@ Examples:
  */
 export async function flagEmails(args: string[]): Promise<void> {
   const parsed = parseArgs(args, BATCH_OPTIONS);
+  if (!wantsHelp(parsed)) validateSelection(parsed);
 
   if (wantsHelp(parsed)) {
     console.log(`
@@ -415,9 +372,7 @@ Examples:
     ),
   );
 
-  if (result.failed > 0) {
-    process.exit(1);
-  }
+  if (result.failed > 0) throw runtimeError(`${result.failed} emails failed`);
 }
 
 /**
@@ -425,6 +380,7 @@ Examples:
  */
 export async function unflagEmails(args: string[]): Promise<void> {
   const parsed = parseArgs(args, BATCH_OPTIONS);
+  if (!wantsHelp(parsed)) validateSelection(parsed);
 
   if (wantsHelp(parsed)) {
     console.log(`
@@ -481,9 +437,7 @@ Examples:
     ),
   );
 
-  if (result.failed > 0) {
-    process.exit(1);
-  }
+  if (result.failed > 0) throw runtimeError(`${result.failed} emails failed`);
 }
 
 /**
@@ -491,6 +445,7 @@ Examples:
  */
 export async function moveEmails(args: string[]): Promise<void> {
   const parsed = parseArgs(args, BATCH_OPTIONS);
+  if (!wantsHelp(parsed)) validateSelection(parsed);
 
   if (wantsHelp(parsed)) {
     console.log(`
@@ -521,10 +476,7 @@ Examples:
   }
 
   const to = getString(parsed, "to");
-  if (!to) {
-    console.error("Error: --to mailbox required");
-    process.exit(1);
-  }
+  if (!to) throw usageError("--to mailbox required");
 
   const client = await getClient();
   const toMailboxId = await resolveMailboxId(client, to);
@@ -596,9 +548,7 @@ Examples:
     ),
   );
 
-  if (result.failed > 0) {
-    process.exit(1);
-  }
+  if (result.failed > 0) throw runtimeError(`${result.failed} emails failed`);
 }
 
 /**
@@ -606,6 +556,7 @@ Examples:
  */
 export async function deleteEmails(args: string[]): Promise<void> {
   const parsed = parseArgs(args, BATCH_OPTIONS);
+  if (!wantsHelp(parsed)) validateSelection(parsed);
 
   if (wantsHelp(parsed)) {
     console.log(`
@@ -670,9 +621,7 @@ Examples:
       ),
     );
 
-    if (result.failed > 0) {
-      process.exit(1);
-    }
+    if (result.failed > 0) throw runtimeError(`${result.failed} emails failed`);
   } else {
     // Move to Trash mailbox
     const trashId = await resolveMailboxId(client, "Trash");
@@ -712,9 +661,7 @@ Examples:
       ),
     );
 
-    if (result.failed > 0) {
-      process.exit(1);
-    }
+    if (result.failed > 0) throw runtimeError(`${result.failed} emails failed`);
   }
 }
 
@@ -723,6 +670,17 @@ Examples:
  */
 export async function modifyEmails(args: string[]): Promise<void> {
   const parsed = parseArgs(args, BATCH_OPTIONS);
+  if (!wantsHelp(parsed)) {
+    validateSelection(parsed);
+    if (
+      !getString(parsed, "add-keyword") &&
+      !getString(parsed, "remove-keyword") &&
+      !getString(parsed, "add-mailbox") &&
+      !getString(parsed, "remove-mailbox")
+    ) {
+      throw usageError("At least one modification flag is required");
+    }
+  }
 
   if (wantsHelp(parsed)) {
     console.log(`
@@ -785,10 +743,9 @@ Examples:
   }
 
   if (Object.keys(patches).length === 0) {
-    console.error(
-      "Error: At least one modification flag required (--add-keyword, --remove-keyword, --add-mailbox, --remove-mailbox)",
+    throw usageError(
+      "At least one modification flag required (--add-keyword, --remove-keyword, --add-mailbox, --remove-mailbox)",
     );
-    process.exit(1);
   }
 
   if (getBoolean(parsed, "dry-run")) {
@@ -827,7 +784,5 @@ Examples:
     ),
   );
 
-  if (result.failed > 0) {
-    process.exit(1);
-  }
+  if (result.failed > 0) throw runtimeError(`${result.failed} emails failed`);
 }

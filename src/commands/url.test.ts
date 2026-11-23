@@ -2,13 +2,40 @@
  * Tests for URL command handlers.
  */
 
-import { describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import {
   getComposeUrl,
   getEmailUrl,
   getMailboxUrl,
   getSearchUrl,
+  urlEmail,
 } from "./url.ts";
+
+const session = {
+  capabilities: { "urn:ietf:params:jmap:mail": {} },
+  accounts: {},
+  primaryAccounts: { "urn:ietf:params:jmap:mail": "account-1" },
+  username: "person@example.com",
+  apiUrl: "https://api.fastmail.com/jmap/api/",
+  downloadUrl:
+    "https://api.fastmail.com/jmap/download/{accountId}/{blobId}/{name}",
+  uploadUrl: "https://api.fastmail.com/jmap/upload/{accountId}/",
+  eventSourceUrl: "https://api.fastmail.com/jmap/eventsource/",
+  state: "state-1",
+};
+
+let fetchSpy: ReturnType<typeof spyOn> | undefined;
+let logSpy: ReturnType<typeof spyOn> | undefined;
+
+beforeEach(() => {
+  process.env.FASTMAIL_API_TOKEN = "token";
+});
+
+afterEach(() => {
+  delete process.env.FASTMAIL_API_TOKEN;
+  fetchSpy?.mockRestore();
+  logSpy?.mockRestore();
+});
 
 describe("getEmailUrl", () => {
   test("generates correct URL for email", () => {
@@ -95,5 +122,39 @@ describe("getComposeUrl", () => {
     expect(url).toContain("to=bob%40example.com");
     expect(url).toContain("subject=Test");
     expect(url).toContain("body=Hi%21");
+  });
+});
+
+describe("urlEmail", () => {
+  test("rejects mixed found and missing IDs without printing partial URLs", async () => {
+    fetchSpy = spyOn(globalThis, "fetch").mockImplementation((async (
+      _url: unknown,
+      init: RequestInit | undefined,
+    ) => {
+      if (!init?.body) return new Response(JSON.stringify(session));
+      const body = JSON.parse(String(init.body));
+      return new Response(
+        JSON.stringify({
+          methodResponses: [
+            [
+              "Email/get",
+              {
+                accountId: "account-1",
+                state: "state-1",
+                list: [{ id: "found", mailboxIds: { "mailbox-1": true } }],
+                notFound: ["missing"],
+              },
+              body.methodCalls[0][2],
+            ],
+          ],
+        }),
+      );
+    }) as typeof fetch);
+    logSpy = spyOn(console, "log").mockImplementation(() => {});
+
+    await expect(urlEmail(["found", "missing"])).rejects.toMatchObject({
+      exitCode: 1,
+    });
+    expect(logSpy).not.toHaveBeenCalled();
   });
 });
